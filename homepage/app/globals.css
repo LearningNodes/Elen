@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+:root {
+  --elen-purple: #7a30ee;
+  --elen-purple-light: #a78bfa;
+  --elen-purple-dark: #5b21b6;
+  --elen-bg: #0a0a0f;
+  --elen-surface: #111118;
+  --elen-surface-2: #1a1a24;
+  --elen-border: #2a2a3a;
+  --elen-text: #e4e4ef;
+  --elen-text-dim: #8888a0;
+  --elen-green: #10b981;
+  --elen-amber: #f59e0b;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--elen-bg);
+  color: var(--elen-text);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+/* Glow effects */
+.glow-purple {
+  box-shadow: 0 0 60px rgba(122, 48, 238, 0.15), 0 0 120px rgba(122, 48, 238, 0.05);
+}
+
+.glow-line {
+  background: linear-gradient(90deg, transparent, var(--elen-purple), transparent);
+  height: 1px;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #a78bfa 0%, #7a30ee 50%, #5b21b6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Code block styling */
+.code-block {
+  background: var(--elen-surface);
+  border: 1px solid var(--elen-border);
+  border-radius: 12px;
+  padding: 24px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-x: auto;
+}
+
+.code-keyword { color: #c084fc; }
+.code-string { color: #34d399; }
+.code-comment { color: #6b7280; }
+.code-number { color: #fbbf24; }
+.code-fn { color: #60a5fa; }
+.code-type { color: #f472b6; }
+
+/* Subtle grid background */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(122, 48, 238, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(122, 48, 238, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* Animate on scroll utility */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-in {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+/* Pricing card hover */
+.pricing-card {
+  transition: all 0.3s ease;
+}
+.pricing-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 60px rgba(122, 48, 238, 0.12);
+}
+
+/* Pill badge */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
