@@ -24,7 +24,7 @@ To fulfill your primary directive of logging decisions, you must be connected to
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.1.1"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.1.2"]
     }
   }
 }
