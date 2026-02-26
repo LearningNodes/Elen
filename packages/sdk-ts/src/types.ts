@@ -7,6 +7,7 @@ export interface ElenConfig {
   sqlitePath?: string;
   apiUrl?: string;
   apiKey?: string;
+  defaultProjectIsolation?: 'strict' | 'open';
 }
 
 export interface CommitDecisionInput {
@@ -19,12 +20,25 @@ export interface CommitDecisionInput {
   supersedesId?: string;
 }
 
+export interface LogDecisionInput {
+  question: string;
+  domain: string;
+  constraints: string[];
+  evidence: string[];
+  confidence?: number[];
+  answer: string;
+  parentPrompt?: string;
+  linkedPrecedents?: string[];
+}
+
 export interface SearchOptions {
   domain?: string;
   projectId?: string;
   includeShared?: boolean;
   query?: string;
   limit?: number;
+  minConfidence?: number;
+  parentPrompt?: string;
 }
 
 export interface SearchPrecedentsOptions {
@@ -33,3 +47,4 @@ export interface SearchPrecedentsOptions {
 
 export type DecisionRecordResult = DecisionRecord;
 export type CompetencyProfileResult = CompetencyProfile;
+export type ExpandedDecision = { record: DecisionRecord; constraints: ConstraintSet };

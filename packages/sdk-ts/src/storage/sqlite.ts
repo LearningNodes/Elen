@@ -1,397 +1,95 @@
 import Database from 'better-sqlite3';
-import type { CompetencyProfile, DecisionRecord, ConstraintSet } from '@learningnodes/elen-core';
+import type { CompetencyProfile, ConstraintSet, DecisionContext, DecisionRecord, MinimalDecisionRecord } from '@learningnodes/elen-core';
 import type { SearchOptions } from '../types';
 import type { StorageAdapter } from './interface';
-
-export interface ProjectRecord {
-  project_id: string;
-  display_name: string;
-  source_hint: string | null;
-  created_at: string;
-}
-
-export interface ProjectSharingRecord {
-  source_project_id: string;
-  target_project_id: string;
-  direction: 'one-way' | 'bi-directional';
-  enabled: number;
-}
 
 export class SQLiteStorage implements StorageAdapter {
   private readonly db: Database.Database;
   private readonly projectId: string;
+  private readonly defaultIsolation: 'strict' | 'open';
 
-  constructor(path: string, projectId: string = 'default') {
+  constructor(path: string, projectId: string = 'default', defaultIsolation: 'strict' | 'open' = 'strict') {
     this.db = new Database(path);
     this.projectId = projectId;
+    this.defaultIsolation = defaultIsolation;
     this.init();
   }
 
-  private init(): void {
-    const pragmaQuery = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
-    const versionRow = pragmaQuery ? pragmaQuery.user_version : 0;
-
-    if (versionRow === 0) {
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS constraint_sets (
-          constraint_set_id TEXT PRIMARY KEY,
-          atoms TEXT NOT NULL,
-          summary TEXT NOT NULL,
-          created_at TEXT NOT NULL
-        );
-  
-        CREATE TABLE IF NOT EXISTS records (
-          record_id TEXT PRIMARY KEY,
-          decision_id TEXT NOT NULL,
-          q_id TEXT NOT NULL,
-          agent_id TEXT NOT NULL,
-          domain TEXT NOT NULL,
-          project_id TEXT NOT NULL DEFAULT 'default',
-          decision_text TEXT NOT NULL,
-          constraint_set_id TEXT NOT NULL,
-          refs TEXT NOT NULL,
-          status TEXT NOT NULL,
-          supersedes_id TEXT,
-          timestamp TEXT NOT NULL,
-          record_json TEXT NOT NULL,
-          FOREIGN KEY(constraint_set_id) REFERENCES constraint_sets(constraint_set_id)
-        );
-  
-        CREATE TABLE IF NOT EXISTS projects (
-          project_id TEXT PRIMARY KEY,
-          display_name TEXT NOT NULL,
-          source_hint TEXT,
-          created_at TEXT NOT NULL
-        );
-  
-        CREATE TABLE IF NOT EXISTS project_sharing (
-          source_project_id TEXT NOT NULL,
-          target_project_id TEXT NOT NULL,
-          direction TEXT NOT NULL DEFAULT 'one-way',
-          enabled INTEGER NOT NULL DEFAULT 1,
-          PRIMARY KEY (source_project_id, target_project_id)
-        );
-  
-          CREATE TABLE IF NOT EXISTS search_log (
-            search_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            query TEXT NOT NULL,
-            domain TEXT,
-            project_id TEXT NOT NULL,
-            hits INTEGER NOT NULL DEFAULT 0,
-            cross_project_hits INTEGER NOT NULL DEFAULT 0,
-            searched_at TEXT NOT NULL
-          );
-        `);
-    } else {
-      // Legacy migration: Database exists but lacks the v1 schema columns.
-      this.db.exec("BEGIN TRANSACTION;");
-      try {
-        this.db.exec(`
-            CREATE TABLE IF NOT EXISTS constraint_sets (
-              constraint_set_id TEXT PRIMARY KEY,
-              atoms TEXT NOT NULL,
-              summary TEXT NOT NULL,
-              created_at TEXT NOT NULL
-            );
-          `);
-
-        // Alter legacy records table to inject the new columns gracefully
-        const queries = [
-          "ALTER TABLE records ADD COLUMN q_id TEXT NOT NULL DEFAULT 'legacy_q'",
-          "ALTER TABLE records ADD COLUMN constraint_set_id TEXT NOT NULL DEFAULT 'legacy_c'",
-          "ALTER TABLE records ADD COLUMN refs TEXT NOT NULL DEFAULT '[]'",
-          "ALTER TABLE records ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
-          "ALTER TABLE records ADD COLUMN supersedes_id TEXT",
-          "ALTER TABLE records ADD COLUMN timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
-          "ALTER TABLE records ADD COLUMN decision_text TEXT NOT NULL DEFAULT ''"
-        ];
-
-        for (const query of queries) {
-          try {
-            this.db.exec(query);
-          } catch (e) {
-            // Ignore "duplicate column name" if partially migrated
-          }
-        }
-
-        // Migrate existing 'answer' data over to 'decision_text' if applicable
-        try {
-          this.db.exec("UPDATE records SET decision_text = answer WHERE decision_text = '' AND answer IS NOT NULL");
-        } catch (e) {
-          // 'answer' column might have been dropped or didn't exist
-        }
-        this.db.exec("COMMIT;");
-      } catch (e) {
-        this.db.exec("ROLLBACK;");
-        throw e;
-      }
-    }
-
-    this.db.exec('PRAGMA user_version = 1');
-
-    // Ensure current project exists in projects table
-    this.ensureProject(this.projectId);
+  private init() {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS constraint_sets (constraint_set_id TEXT PRIMARY KEY, atoms TEXT NOT NULL, summary TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS decisions (decision_id TEXT PRIMARY KEY, decision_json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS records (
+        record_id TEXT PRIMARY KEY,
+        decision_id TEXT,
+        agent_id TEXT NOT NULL,
+        domain TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        question_text TEXT,
+        decision_text TEXT,
+        confidence REAL,
+        payload_json TEXT NOT NULL
+      );
+    `);
   }
 
-  private ensureProject(projectId: string, displayName?: string): void {
-    const existing = this.db
-      .prepare('SELECT project_id FROM projects WHERE project_id = ?')
-      .get(projectId);
-
-    if (!existing) {
-      this.db.prepare(`
-        INSERT INTO projects (project_id, display_name, source_hint, created_at)
-        VALUES (@project_id, @display_name, @source_hint, @created_at)
-      `).run({
-        project_id: projectId,
-        display_name: displayName || projectId.replace(/[-_]/g, ' ').replace(/\\b\\w/g, c => c.toUpperCase()),
-        source_hint: null,
-        created_at: new Date().toISOString()
-      });
-    }
+  async saveDecision(decision: DecisionContext): Promise<void> {
+    this.db.prepare('INSERT OR REPLACE INTO decisions(decision_id, decision_json) VALUES (?,?)').run([decision.decision_id, JSON.stringify(decision)]); 
   }
-
-  // --- Project & Sharing Management ---
-
-  getProjects(): ProjectRecord[] {
-    return this.db.prepare('SELECT * FROM projects ORDER BY created_at ASC').all() as ProjectRecord[];
-  }
-
-  getSharing(): ProjectSharingRecord[] {
-    return this.db.prepare('SELECT * FROM project_sharing ORDER BY source_project_id').all() as ProjectSharingRecord[];
-  }
-
-  upsertSharing(source: string, target: string, direction: 'one-way' | 'bi-directional', enabled: boolean): void {
-    this.db.prepare(`
-      INSERT INTO project_sharing (source_project_id, target_project_id, direction, enabled)
-      VALUES (@source, @target, @direction, @enabled)
-      ON CONFLICT(source_project_id, target_project_id)
-      DO UPDATE SET direction = @direction, enabled = @enabled
-    `).run({ source, target, direction: direction, enabled: enabled ? 1 : 0 });
-  }
-
-  deleteSharing(source: string, target: string): void {
-    this.db.prepare('DELETE FROM project_sharing WHERE source_project_id = ? AND target_project_id = ?')
-      .run([source, target]);
-  }
-
-  private getAccessibleProjects(): string[] {
-    const hasRules = this.db.prepare(`
-      SELECT 1 FROM project_sharing
-      WHERE source_project_id = ? OR target_project_id = ?
-      LIMIT 1
-    `).get(this.projectId, this.projectId);
-
-    if (!hasRules) {
-      const all = this.db.prepare('SELECT project_id FROM projects').all() as Array<{ project_id: string }>;
-      const ids = new Set(all.map(r => r.project_id));
-      ids.add(this.projectId);
-      return [...ids];
-    }
-
-    const accessible = new Set<string>([this.projectId]);
-
-    const inbound = this.db.prepare(`
-      SELECT source_project_id FROM project_sharing
-      WHERE target_project_id = ? AND enabled = 1
-    `).all(this.projectId) as Array<{ source_project_id: string }>;
-
-    for (const row of inbound) {
-      accessible.add(row.source_project_id);
-    }
-
-    const bidir = this.db.prepare(`
-      SELECT source_project_id, target_project_id FROM project_sharing
-      WHERE direction = 'bi-directional' AND enabled = 1
-        AND (source_project_id = ? OR target_project_id = ?)
-    `).all([this.projectId, this.projectId]) as Array<{ source_project_id: string; target_project_id: string }>;
-
-    for (const row of bidir) {
-      accessible.add(row.source_project_id);
-      accessible.add(row.target_project_id);
-    }
-
-    return [...accessible];
-  }
-
-  // --- Core Storage Methods ---
-
   async saveConstraintSet(constraintSet: ConstraintSet): Promise<void> {
-    const statement = this.db.prepare(`
-      INSERT OR IGNORE INTO constraint_sets (constraint_set_id, atoms, summary, created_at)
-      VALUES (@constraint_set_id, @atoms, @summary, @created_at)
-    `);
-
-    statement.run({
-      constraint_set_id: constraintSet.constraint_set_id,
-      atoms: JSON.stringify(constraintSet.atoms),
-      summary: constraintSet.summary,
-      created_at: new Date().toISOString()
-    });
+    this.db.prepare('INSERT OR IGNORE INTO constraint_sets(constraint_set_id, atoms, summary) VALUES (?,?,?)').run([constraintSet.constraint_set_id, JSON.stringify(constraintSet.atoms), constraintSet.summary]);
   }
-
   async getConstraintSet(id: string): Promise<ConstraintSet | null> {
-    const row = this.db
-      .prepare('SELECT constraint_set_id, atoms, summary FROM constraint_sets WHERE constraint_set_id = ?')
-      .get(id) as { constraint_set_id: string; atoms: string; summary: string } | undefined;
-
-    if (!row) {
-      return null;
-    }
-
-    return {
-      constraint_set_id: row.constraint_set_id,
-      atoms: JSON.parse(row.atoms) as string[],
-      summary: row.summary
-    };
+    const row = this.db.prepare('SELECT * FROM constraint_sets WHERE constraint_set_id=?').get(id) as any;
+    return row ? { constraint_set_id: row.constraint_set_id, atoms: JSON.parse(row.atoms), summary: row.summary } : null;
   }
-
-  async saveRecord(record: DecisionRecord): Promise<void> {
-    const statement = this.db.prepare(`
-      INSERT OR REPLACE INTO records (
-        record_id, decision_id, q_id, agent_id, domain, project_id, decision_text, 
-        constraint_set_id, refs, status, supersedes_id, timestamp, record_json
-      )
-      VALUES (
-        @record_id, @decision_id, @q_id, @agent_id, @domain, @project_id, @decision_text, 
-        @constraint_set_id, @refs, @status, @supersedes_id, @timestamp, @record_json
-      )
-    `);
-
-    const enrichedRecord = { ...record, project_id: this.projectId };
-
-    statement.run({
-      record_id: record.decision_id,
-      decision_id: record.decision_id,
-      q_id: record.q_id,
-      agent_id: record.agent_id,
-      domain: record.domain,
-      project_id: this.projectId,
-      decision_text: record.decision_text,
-      constraint_set_id: record.constraint_set_id,
-      refs: JSON.stringify(record.refs),
-      status: record.status,
-      supersedes_id: record.supersedes_id ?? null,
-      timestamp: record.timestamp,
-      record_json: JSON.stringify(enrichedRecord)
-    });
+  async saveRecord(record: MinimalDecisionRecord | DecisionRecord): Promise<void> {
+    if ("record_id" in record) {
+      await this.saveLegacyRecord(record);
+      return;
+    }
+    this.db.prepare('INSERT OR REPLACE INTO records(record_id, decision_id, agent_id, domain, project_id, question_text, decision_text, payload_json) VALUES (?,?,?,?,?,?,?,?)').run([record.decision_id, record.decision_id, record.agent_id, record.domain, this.projectId, record.question_text ?? null, record.decision_text, JSON.stringify(record)]);
   }
-
-  async getRecord(recordId: string): Promise<DecisionRecord | null> {
-    const row = this.db
-      .prepare('SELECT record_json FROM records WHERE decision_id = ?')
-      .get(recordId) as { record_json: string } | undefined;
-
-    if (!row) {
-      return null;
-    }
-
-    return JSON.parse(row.record_json) as DecisionRecord;
+  async saveLegacyRecord(record: DecisionRecord): Promise<void> {
+    this.db.prepare('INSERT OR REPLACE INTO records(record_id, decision_id, agent_id, domain, project_id, question_text, decision_text, confidence, payload_json) VALUES (?,?,?,?,?,?,?,?,?)').run([record.record_id, record.decision_id, record.agent_id, record.domain, this.projectId, record.question, record.answer, record.confidence, JSON.stringify(record)]);
   }
-
-  async searchRecords(opts: SearchOptions): Promise<DecisionRecord[]> {
-    const conditions: string[] = [];
-    const params: Record<string, unknown> = {};
-
-    if (opts.includeShared !== false) {
-      const accessible = this.getAccessibleProjects();
-      const placeholders = accessible.map((_, i) => `@proj${i}`);
-      conditions.push(`records.project_id IN (${placeholders.join(', ')})`);
-      accessible.forEach((id, i) => { params[`proj${i}`] = id; });
-    } else {
-      const projId = opts.projectId || this.projectId;
-      conditions.push('records.project_id = @projectId');
-      params.projectId = projId;
-    }
-
-    if (opts.domain) {
-      conditions.push('records.domain = @domain');
-      params.domain = opts.domain;
-    }
-
+  async getRecord(recordId: string): Promise<MinimalDecisionRecord | DecisionRecord | null> {
+    const row = this.db.prepare('SELECT payload_json FROM records WHERE record_id=? OR decision_id=?').get([recordId, recordId]) as any;
+    return row ? JSON.parse(row.payload_json) : null;
+  }
+  async searchRecords(opts: SearchOptions): Promise<Array<MinimalDecisionRecord | DecisionRecord>> {
+    let rows = this.db.prepare('SELECT payload_json, decision_id, project_id, confidence, question_text, decision_text, domain FROM records').all() as any[];
+    if (this.defaultIsolation === 'strict' || opts.includeShared === false) rows = rows.filter(r => r.project_id === this.projectId);
+    if (opts.domain) rows = rows.filter(r => r.domain === opts.domain);
+    if (typeof opts.minConfidence === 'number') rows = rows.filter(r => r.confidence == null || r.confidence >= opts.minConfidence!);
     if (opts.query) {
-      conditions.push(`(
-        LOWER(records.decision_text) LIKE @query OR
-        LOWER(records.domain) LIKE @query OR
-        LOWER(records.q_id) LIKE @query
-      )`);
-      params.query = `%${opts.query.toLowerCase()}%`;
+      const q=opts.query.toLowerCase();
+      rows=rows.filter(r => { const p = JSON.parse(r.payload_json); const extra = p.constraints_snapshot ? `${p.constraints_snapshot.map((c:any)=>c.description).join(' ')} ${p.evidence_snapshot.map((e:any)=>`${e.claim} ${e.proof}`).join(' ')}` : ''; return `${r.question_text ?? ''} ${r.decision_text ?? ''} ${r.domain ?? ''} ${extra}`.toLowerCase().includes(q); });
     }
-
-    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
-    const limitClause = opts.limit ? `LIMIT ${Math.max(1, opts.limit)}` : '';
-
-    const rows = this.db
-      .prepare(
-        `SELECT records.record_json FROM records
-         ${whereClause}
-         ORDER BY records.timestamp DESC
-         ${limitClause}`
-      )
-      .all(params) as Array<{ record_json: string }>;
-
-    const results = rows.map((row) => JSON.parse(row.record_json) as DecisionRecord);
-
-    try {
-      const crossProjectHits = results.filter((r: DecisionRecord & { project_id?: string }) => {
-        return r.project_id && r.project_id !== this.projectId;
-      }).length;
-
-      this.db.prepare(`
-        INSERT INTO search_log(query, domain, project_id, hits, cross_project_hits, searched_at)
-        VALUES(@query, @domain, @project_id, @hits, @cross_project_hits, @searched_at)
-      `).run({
-        query: opts.query || '',
-        domain: opts.domain || null,
-        project_id: this.projectId,
-        hits: results.length,
-        cross_project_hits: crossProjectHits,
-        searched_at: new Date().toISOString()
+    let parsed = rows.map(r => JSON.parse(r.payload_json));
+    if (opts.parentPrompt) {
+      const needle = opts.parentPrompt.toLowerCase();
+      parsed = parsed.filter((r: any) => {
+        const d = this.db.prepare('SELECT decision_json FROM decisions WHERE decision_id=?').get(r.decision_id) as any;
+        if (!d) return false;
+        const ctx = JSON.parse(d.decision_json) as DecisionContext;
+        return ctx.parent_prompt?.toLowerCase().includes(needle) ?? false;
       });
-    } catch {
-      // Non-critical: don't fail search if logging fails
     }
-
-    return results;
+    return opts.limit ? parsed.slice(0, opts.limit) : parsed;
   }
-
-  async getAgentDecisions(agentId: string, domain?: string): Promise<DecisionRecord[]> {
-    const statement = domain
-      ? this.db.prepare(
-        'SELECT record_json FROM records WHERE agent_id = @agentId AND domain = @domain ORDER BY timestamp DESC'
-      )
-      : this.db.prepare('SELECT record_json FROM records WHERE agent_id = @agentId ORDER BY timestamp DESC');
-
-    const rows = statement.all({ agentId, domain }) as Array<{ record_json: string }>;
-    return rows.map((row) => JSON.parse(row.record_json) as DecisionRecord);
+  async getAgentDecisions(agentId: string, domain?: string): Promise<Array<MinimalDecisionRecord | DecisionRecord>> {
+    const rows = this.db.prepare('SELECT payload_json FROM records WHERE agent_id=?').all([agentId]) as any[];
+    const parsed = rows.map(r => JSON.parse(r.payload_json));
+    return domain ? parsed.filter(r => r.domain === domain) : parsed;
   }
-
   async getCompetencyProfile(agentId: string): Promise<CompetencyProfile> {
     const records = await this.getAgentDecisions(agentId);
-    const domainCounts = new Map<string, number>();
-
-    for (const record of records) {
-      const count = domainCounts.get(record.domain) ?? 0;
-      domainCounts.set(record.domain, count + 1);
-    }
-
-    const domains = Array.from(domainCounts.keys());
-    const strengths: string[] = [];
-    const weaknesses: string[] = [];
-
-    // Simply map domain frequency to strengths
-    for (const [domain, count] of domainCounts.entries()) {
-      if (count >= 5) {
-        strengths.push(domain);
-      }
-    }
-
-    return {
-      agent_id: agentId,
-      domains,
-      strengths,
-      weaknesses,
-      updated_at: new Date().toISOString()
-    };
+    const stats = new Map<string, {count:number; conf:number}>();
+    for (const r of records) { const c=stats.get(r.domain) ?? {count:0, conf:0}; c.count +=1; c.conf += ("confidence" in r ? r.confidence : 0.8); stats.set(r.domain,c); }
+    const domains=[...stats.keys()];
+    const strengths=domains.filter(d=>{const s=stats.get(d)!; return (s.conf/s.count)>=0.7;});
+    const weaknesses=domains.filter(d=>{const s=stats.get(d)!; return (s.conf/s.count)<0.7;});
+    return { agent_id: agentId, domains, strengths, weaknesses, updated_at: new Date().toISOString() };
   }
 }

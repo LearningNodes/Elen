@@ -1,6 +1,6 @@
 import { ElenClient } from './client';
 import { InMemoryStorage, SQLiteStorage, type StorageAdapter } from './storage';
-import type { ElenConfig, CommitDecisionInput, SearchOptions } from './types';
+import type { ElenConfig, CommitDecisionInput, LogDecisionInput, SearchOptions } from './types';
 
 export class Elen {
   private readonly client: ElenClient;
@@ -12,10 +12,14 @@ export class Elen {
 
   private createStorage(config: ElenConfig): StorageAdapter {
     if (config.storage === 'sqlite') {
-      return new SQLiteStorage(config.sqlitePath ?? 'elen.db', config.projectId);
+      return new SQLiteStorage(config.sqlitePath ?? 'elen.db', config.projectId, config.defaultProjectIsolation ?? 'strict');
     }
 
     return new InMemoryStorage();
+  }
+
+  async logDecision(input: LogDecisionInput) {
+    return this.client.logDecision(input);
   }
 
   async commitDecision(input: CommitDecisionInput) {
@@ -24,6 +28,14 @@ export class Elen {
 
   async supersedeDecision(oldDecisionId: string, input: CommitDecisionInput) {
     return this.client.supersedeDecision(oldDecisionId, input);
+  }
+
+  async searchRecords(opts: SearchOptions) {
+    return this.client.searchRecords(opts);
+  }
+
+  async searchPrecedents(query: string, opts: SearchOptions = {}) {
+    return this.client.searchPrecedents(query, opts);
   }
 
   async suggest(opts: SearchOptions) {
