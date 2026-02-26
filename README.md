@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="https://elen.learningnodes.com/walkthrough.html">See how it works</a> · <a href="./SPEC.md">Spec</a> · <a href="./ROADMAP.md">Roadmap</a> · <a href="./CONTRIBUTING.md">Contributing</a> · <a href="./LICENSE">License</a>
+  <a href="https://discord.gg/zJG6n2WGzM">Join Discord</a> · <a href="https://elen.learningnodes.com/walkthrough.html">See how it works</a> · <a href="./SPEC.md">Spec</a> · <a href="./ROADMAP.md">Roadmap</a> · <a href="./CONTRIBUTING.md">Contributing</a> · <a href="./LICENSE">License</a>
 </p>
 
 ---
