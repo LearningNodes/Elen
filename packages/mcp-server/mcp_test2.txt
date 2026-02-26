@@ -1,0 +1,60 @@
+﻿
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/ln_ni/OneDrive/Desktop/Desktop/ventures/learningnodes/git/marketplace-repos/Elen/packages/mcp-server[39m
+
+ [32mΓ£ô[39m tests/server.test.ts[2m > [22mMCP server CLI[2m > [22mparses --agent-id and --storage args
+ [31m├ù[39m tests/server.test.ts[2m > [22mMCP server CLI[2m > [22muses defaults when args are omitted
+[31m   ΓåÆ expected 'C:\Users\ln_ni\.elen\decisions.db' to contain '.elen/decisions.db'[39m
+ [32mΓ£ô[39m tests/server.test.ts[2m > [22mrouteToolCall[2m > [22mroutes known tools and throws for unknown tool
+
+node.exe : [31mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1m[7m 
+Failed Tests 1 
+[27m[22mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[39m
+At C:\Users\ln_ni\AppData\Roaming\npm\npx.ps1:24 
+char:5
++     & "node$exe"  
+"$basedir/node_modules/npm/bin/npx-cli.js" $args
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([3 
+   1mΓÄ»ΓÄ»ΓÄ»Γ...»ΓÄ»ΓÄ»ΓÄ»[39m:String) [], R  
+  emoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+
+[31m[1m[7m FAIL [27m[22m[39m 
+tests/server.test.ts[2m > [22mMCP server 
+CLI[2m > [22muses defaults when args are 
+omitted
+[31m[1mAssertionError[22m: expected 
+'C:\Users\ln_ni\.elen\decisions.db' to contain 
+'.elen/decisions.db'[39m
+
+Expected: [32m".elen[7m/[27mdecisions.db"[39m
+Received: [31m"[7mC:\Users\ln_ni\[27m.elen[7m
+\[27mdecisions.db"[39m
+
+[36m [2mΓ¥»[22m 
+tests/server.test.ts:[2m17:34[22m[39m
+    [90m 15| [39m
+    [90m 16| [39m    [34mexpect[39m(parsed[3
+3m.[39magentId)[33m.[39m[34mtoBe[39m([32m'd
+efault-agent'[39m)[33m;[39m
+    [90m 17| [39m    [34mexpect[39m([34mdefa
+ultStoragePath[39m())[33m.[39m[34mtoContain[
+39m([32m'.elen/decisions.db'[39m)[33m;[39m
+    [90m   | [39m                              
+   [31m^[39m
+    [90m 18| [39m    [34mexpect[39m(parsed[3
+3m.[39mstoragePath)[33m.[39m[34mtoBeUndefined
+[39m()[33m;[39m
+    [90m 19| [39m  })[33m;[39m
+
+[31m[2mΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»Γ
+Ä»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»ΓÄ»[1/1]ΓÄ»[22m[39
+m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m2 passed[39m[22m[90m (3)[39m
+[2m   Start at [22m 12:22:13
+[2m   Duration [22m 7.20s[2m (transform 1.16s, setup 0ms, collect 3.05s, tests 132ms, environment 3ms, prepare 2.39s)[22m
+

@@ -1,0 +1,12 @@
+{
+    "name": "@learningnodes/elen-consolidator",
+    "version": "0.1.0",
+    "license": "AGPL-3.0",
+    "main": "consolidator.js",
+    "scripts": {
+        "start": "node consolidator.js"
+    },
+    "dependencies": {
+        "better-sqlite3": "^11.7.0"
+    }
+}

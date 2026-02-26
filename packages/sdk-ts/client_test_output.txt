@@ -1,0 +1,17 @@
+﻿
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/ln_ni/OneDrive/Desktop/Desktop/ventures/learningnodes/git/marketplace-repos/Elen/packages/sdk-ts[39m
+
+ [32mΓ£ô[39m tests/client.test.ts[2m > [22mElenClient[2m > [22mlogDecision creates a valid DecisionRecord
+ [32mΓ£ô[39m tests/client.test.ts[2m > [22mElenClient[2m > [22mlogDecision throws if no constraints provided
+ [32mΓ£ô[39m tests/client.test.ts[2m > [22mElenClient[2m > [22mlogDecision throws if no evidence provided
+ [32mΓ£ô[39m tests/client.test.ts[2m > [22mElenClient[2m > [22mlogDecision auto-classifies epistemic types
+ [32mΓ£ô[39m tests/client.test.ts[2m > [22mElenClient[2m > [22msearchRecords filters by domain, minConfidence and parentPrompt
+ [32mΓ£ô[39m tests/client.test.ts[2m > [22mElenClient[2m > [22mcompetency profile is computed from records
+ [32mΓ£ô[39m tests/client.test.ts[2m > [22mElenClient[2m > [22mstores linked precedents in evidence
+ [32mΓ£ô[39m tests/client.test.ts[2m > [22mElenClient[2m > [22mID generation produces unique IDs
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m8 passed[39m[22m[90m (8)[39m
+[2m   Start at [22m 12:18:15
+[2m   Duration [22m 2.30s[2m (transform 471ms, setup 0ms, collect 666ms, tests 51ms, environment 1ms, prepare 546ms)[22m
+

@@ -1,0 +1,3 @@
+﻿[consolidator] Database: C:\Users\ln_ni\.elen\decisions.db
+[consolidator] Found 27 total records, 3 need threading.
+[consolidator] Done in 20ms: 27 records processed, 0 clustered, 0 bridges added.
