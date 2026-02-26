@@ -72,19 +72,62 @@ export class SQLiteStorage implements StorageAdapter {
           PRIMARY KEY (source_project_id, target_project_id)
         );
   
-        CREATE TABLE IF NOT EXISTS search_log (
-          search_id INTEGER PRIMARY KEY AUTOINCREMENT,
-          query TEXT NOT NULL,
-          domain TEXT,
-          project_id TEXT NOT NULL,
-          hits INTEGER NOT NULL DEFAULT 0,
-          cross_project_hits INTEGER NOT NULL DEFAULT 0,
-          searched_at TEXT NOT NULL
-        );
-      `);
+          CREATE TABLE IF NOT EXISTS search_log (
+            search_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query TEXT NOT NULL,
+            domain TEXT,
+            project_id TEXT NOT NULL,
+            hits INTEGER NOT NULL DEFAULT 0,
+            cross_project_hits INTEGER NOT NULL DEFAULT 0,
+            searched_at TEXT NOT NULL
+          );
+        `);
+    } else {
+      // Legacy migration: Database exists but lacks the v1 schema columns.
+      this.db.exec("BEGIN TRANSACTION;");
+      try {
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS constraint_sets (
+              constraint_set_id TEXT PRIMARY KEY,
+              atoms TEXT NOT NULL,
+              summary TEXT NOT NULL,
+              created_at TEXT NOT NULL
+            );
+          `);
 
-      this.db.exec('PRAGMA user_version = 1');
+        // Alter legacy records table to inject the new columns gracefully
+        const queries = [
+          "ALTER TABLE records ADD COLUMN q_id TEXT NOT NULL DEFAULT 'legacy_q'",
+          "ALTER TABLE records ADD COLUMN constraint_set_id TEXT NOT NULL DEFAULT 'legacy_c'",
+          "ALTER TABLE records ADD COLUMN refs TEXT NOT NULL DEFAULT '[]'",
+          "ALTER TABLE records ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
+          "ALTER TABLE records ADD COLUMN supersedes_id TEXT",
+          "ALTER TABLE records ADD COLUMN timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP",
+          "ALTER TABLE records ADD COLUMN decision_text TEXT NOT NULL DEFAULT ''"
+        ];
+
+        for (const query of queries) {
+          try {
+            this.db.exec(query);
+          } catch (e) {
+            // Ignore "duplicate column name" if partially migrated
+          }
+        }
+
+        // Migrate existing 'answer' data over to 'decision_text' if applicable
+        try {
+          this.db.exec("UPDATE records SET decision_text = answer WHERE decision_text = '' AND answer IS NOT NULL");
+        } catch (e) {
+          // 'answer' column might have been dropped or didn't exist
+        }
+        this.db.exec("COMMIT;");
+      } catch (e) {
+        this.db.exec("ROLLBACK;");
+        throw e;
+      }
     }
+
+    this.db.exec('PRAGMA user_version = 1');
 
     // Ensure current project exists in projects table
     this.ensureProject(this.projectId);
@@ -296,8 +339,8 @@ export class SQLiteStorage implements StorageAdapter {
 
       this.db.prepare(`
         INSERT INTO search_log(query, domain, project_id, hits, cross_project_hits, searched_at)
-      VALUES(@query, @domain, @project_id, @hits, @cross_project_hits, @searched_at)
-        `).run({
+        VALUES(@query, @domain, @project_id, @hits, @cross_project_hits, @searched_at)
+      `).run({
         query: opts.query || '',
         domain: opts.domain || null,
         project_id: this.projectId,
