@@ -14,7 +14,7 @@ describe('MCP server CLI', () => {
     const parsed = parseCliArgs([]);
 
     expect(parsed.agentId).toBe('default-agent');
-    expect(defaultStoragePath()).toContain('.elen/decisions.db');
+    expect(defaultStoragePath().replace(/\\/g, '/')).toContain('.elen/decisions.db');
     expect(parsed.storagePath).toBeUndefined();
   });
 });

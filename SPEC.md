@@ -31,8 +31,9 @@ The Decision Atom is designed to be extremely lightweight, used heavily in `Sugg
 ```json
 {
   "decision_id": "dec:ENG-a1b2",
+  "q_id": "q-x7k2m",
+  "question_text": "Which caching database should we use?",
   "domain": "infrastructure",
-  "question": "Which caching database should we use?",
   "decision_text": "Redis over Memcached due to data-structure support.",
   "constraint_set_id": "cs:7f8d2b",
   "refs": ["dec:ENG-x1y2"],
@@ -118,6 +119,9 @@ Revision is explicit: new decisions can supersede old ones. Superseded decisions
 }
 ```
 
+#### 5. elen_get_competency (Profile)
+Returns a competency profile for the current agent — domain expertise based on validated decision history, including strengths and weaknesses.
+
 ---
 
 ## Minimal Token Strategy
@@ -136,6 +140,10 @@ Elen’s token efficiency comes from three mechanisms:
 | Commit / Supersede | ~200 | 3-5 per session |
 
 This keeps routine usage well below typical "context dump" patterns while still enabling extreme rigor when needed.
+
+### Project Isolation
+
+Decisions are scoped per project with **strict isolation by default** (`defaultProjectIsolation: 'strict'`). Cross-project sharing is opt-in via explicit configuration.
 
 ---
 

@@ -103,7 +103,7 @@ Agent faces a problem
 | **Top-K Pointers** | Agents retrieve IDs and summaries first, saving tokens. |
 | **Constraint Sets** | Reusable, SHA-256 hashed plain-text rules ("budget < 500ms"). |
 | **Explicit DAG** | Decisions explicitly reference (`refs`) or override (`supersedes`) others. |
-| **Project Segmentation** | Decisions scoped per project, with optional cross-project sharing. |
+| **Project Segmentation** | Decisions scoped per project with strict isolation by default. Cross-project sharing is opt-in. |
 
 ## What's Built
 
