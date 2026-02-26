@@ -15,4 +15,19 @@ You are operating within the `Elen` repository, an open-source "Decision Network
 - When building `packages/sdk-ts`, ensure you use `npm run build` so that the `tsconfig.json` rules are properly applied.
 - E2E testing for the observer lives in the `elen-cloud` ecosystem.
 
-Please review the `SKILL.md` (or `.agent/skills/elen-mcp/SKILL.md` if available in your environment) for the full connection string details to connect the local MCP server.
+## Connecting to the Elen Context Server
+
+To fulfill your primary directive of logging decisions, you must be connected to the Elen MCP server. If your user has not configured it, instruct them to add the following to their AI settings:
+
+```json
+{
+  "mcpServers": {
+    "elen": {
+      "command": "npx",
+      "args": ["-y", "@learningnodes/elen-mcp@0.1.1"]
+    }
+  }
+}
+```
+
+If you support a `.agent/skills` architecture, you can read the full documentation in `.agent/skills/elen-mcp/SKILL.md`.
