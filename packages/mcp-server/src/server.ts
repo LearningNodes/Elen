@@ -11,11 +11,15 @@ import {
   elenExpandTool,
   elenSupersedeTool,
   elenGetCompetencyTool,
+  elenLogDecisionTool,
+  elenSearchPrecedentsTool,
   handleCommit,
   handleSuggest,
   handleExpand,
   handleSupersede,
-  handleGetCompetency
+  handleGetCompetency,
+  handleLogDecision,
+  handleSearchPrecedents
 } from './tools';
 
 export interface McpServerOptions {
@@ -53,6 +57,10 @@ export async function routeToolCall(elen: Elen, agentId: string, name: string, a
       return handleSupersede(elen, args);
     case elenGetCompetencyTool.name:
       return handleGetCompetency(elen, args, agentId);
+    case elenLogDecisionTool.name:
+      return handleLogDecision(elen, args);
+    case elenSearchPrecedentsTool.name:
+      return handleSearchPrecedents(elen, args);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -79,7 +87,9 @@ export function createMcpServer(options: McpServerOptions) {
       elenSuggestTool,
       elenExpandTool,
       elenSupersedeTool,
-      elenGetCompetencyTool
+      elenGetCompetencyTool,
+      elenLogDecisionTool,
+      elenSearchPrecedentsTool
     ]
   }));
 
