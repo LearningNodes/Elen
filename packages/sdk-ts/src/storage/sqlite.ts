@@ -28,56 +28,63 @@ export class SQLiteStorage implements StorageAdapter {
   }
 
   private init(): void {
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS constraint_sets (
-        constraint_set_id TEXT PRIMARY KEY,
-        atoms TEXT NOT NULL,
-        summary TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
+    const pragmaQuery = this.db.prepare('PRAGMA user_version').get() as { user_version: number };
+    const versionRow = pragmaQuery ? pragmaQuery.user_version : 0;
 
-      CREATE TABLE IF NOT EXISTS records (
-        record_id TEXT PRIMARY KEY,
-        decision_id TEXT NOT NULL,
-        q_id TEXT NOT NULL,
-        agent_id TEXT NOT NULL,
-        domain TEXT NOT NULL,
-        project_id TEXT NOT NULL DEFAULT 'default',
-        decision_text TEXT NOT NULL,
-        constraint_set_id TEXT NOT NULL,
-        refs TEXT NOT NULL,
-        status TEXT NOT NULL,
-        supersedes_id TEXT,
-        timestamp TEXT NOT NULL,
-        record_json TEXT NOT NULL,
-        FOREIGN KEY(constraint_set_id) REFERENCES constraint_sets(constraint_set_id)
-      );
+    if (versionRow === 0) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS constraint_sets (
+          constraint_set_id TEXT PRIMARY KEY,
+          atoms TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+  
+        CREATE TABLE IF NOT EXISTS records (
+          record_id TEXT PRIMARY KEY,
+          decision_id TEXT NOT NULL,
+          q_id TEXT NOT NULL,
+          agent_id TEXT NOT NULL,
+          domain TEXT NOT NULL,
+          project_id TEXT NOT NULL DEFAULT 'default',
+          decision_text TEXT NOT NULL,
+          constraint_set_id TEXT NOT NULL,
+          refs TEXT NOT NULL,
+          status TEXT NOT NULL,
+          supersedes_id TEXT,
+          timestamp TEXT NOT NULL,
+          record_json TEXT NOT NULL,
+          FOREIGN KEY(constraint_set_id) REFERENCES constraint_sets(constraint_set_id)
+        );
+  
+        CREATE TABLE IF NOT EXISTS projects (
+          project_id TEXT PRIMARY KEY,
+          display_name TEXT NOT NULL,
+          source_hint TEXT,
+          created_at TEXT NOT NULL
+        );
+  
+        CREATE TABLE IF NOT EXISTS project_sharing (
+          source_project_id TEXT NOT NULL,
+          target_project_id TEXT NOT NULL,
+          direction TEXT NOT NULL DEFAULT 'one-way',
+          enabled INTEGER NOT NULL DEFAULT 1,
+          PRIMARY KEY (source_project_id, target_project_id)
+        );
+  
+        CREATE TABLE IF NOT EXISTS search_log (
+          search_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          query TEXT NOT NULL,
+          domain TEXT,
+          project_id TEXT NOT NULL,
+          hits INTEGER NOT NULL DEFAULT 0,
+          cross_project_hits INTEGER NOT NULL DEFAULT 0,
+          searched_at TEXT NOT NULL
+        );
+      `);
 
-      CREATE TABLE IF NOT EXISTS projects (
-        project_id TEXT PRIMARY KEY,
-        display_name TEXT NOT NULL,
-        source_hint TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS project_sharing (
-        source_project_id TEXT NOT NULL,
-        target_project_id TEXT NOT NULL,
-        direction TEXT NOT NULL DEFAULT 'one-way',
-        enabled INTEGER NOT NULL DEFAULT 1,
-        PRIMARY KEY (source_project_id, target_project_id)
-      );
-
-      CREATE TABLE IF NOT EXISTS search_log (
-        search_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        query TEXT NOT NULL,
-        domain TEXT,
-        project_id TEXT NOT NULL,
-        hits INTEGER NOT NULL DEFAULT 0,
-        cross_project_hits INTEGER NOT NULL DEFAULT 0,
-        searched_at TEXT NOT NULL
-      );
-    `);
+      this.db.exec('PRAGMA user_version = 1');
+    }
 
     // Ensure current project exists in projects table
     this.ensureProject(this.projectId);
