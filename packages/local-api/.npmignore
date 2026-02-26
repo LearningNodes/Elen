@@ -1,0 +1,11 @@
+# Test artifacts and dev output — never publish these
+*.txt
+*.log
+coverage/
+tests/
+*.test.ts
+*.spec.ts
+src/
+tsconfig.json
+.env*
+node_modules/
