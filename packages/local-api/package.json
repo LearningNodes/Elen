@@ -1,0 +1,29 @@
+{
+    "name": "@learningnodes/elen-local-api",
+    "version": "0.1.0",
+    "description": "Lightweight read-only HTTP API that exposes your local Elen decisions.db for the cloud dashboard",
+    "main": "index.js",
+    "license": "AGPL-3.0",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "bin": {
+        "elen-local-api": "./index.js"
+    },
+    "dependencies": {
+        "better-sqlite3": "^11.7.0",
+        "cors": "^2.8.5",
+        "express": "^4.21.0"
+    },
+    "keywords": [
+        "elen",
+        "decision",
+        "memory",
+        "mcp",
+        "local-api"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/learningnodes/elen"
+    }
+}
