@@ -84,9 +84,10 @@ Given a query, Elen returns Top-K candidates with minimal payloads:
 {
   "candidates": [
     {
-      "decisionId": "dec:ENG-a1b2",
-      "summary": "Redis over Memcached due to data-structure support.",
-      "confidence": 0.95
+      "decision_id": "dec:ENG-a1b2",
+      "decision_text": "Redis over Memcached due to data-structure support.",
+      "constraint_set_id": "cs:7f8d2b",
+      "status": "active"
     }
   ]
 }

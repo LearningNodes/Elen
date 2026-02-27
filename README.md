@@ -70,7 +70,7 @@ Add Elen as an MCP server — your agent gets tools with descriptions that tell 
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["@learningnodes/elen-mcp"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.1.6"]
     }
   }
 }
@@ -116,8 +116,32 @@ Agent faces a problem
 | Explicit Graph DAG (refs & supersedes wiring) | ✅ Shipped |
 | Project segmentation with auto-detection from git/package.json | ✅ Shipped |
 | Shared Cross-Project Workspaces | ✅ Shipped |
+| **Elen Workstation** (cloud dashboard + local data) | ✅ Shipped |
+| **Bundled Local API** (opt-in via `ELEN_LOCAL_API=true`) | ✅ Shipped |
 
 See [ROADMAP.md](./ROADMAP.md) for what's next.
+
+## Elen Workstation
+
+The Elen Workstation is a visual dashboard for your decision network at [app.elen.learningnodes.com](https://app.elen.learningnodes.com). Your data never leaves your machine — the cloud serves only the UI shell, and the browser fetches data from your local MCP.
+
+**To enable the workstation**, add `ELEN_LOCAL_API` to your MCP config:
+
+```json
+{
+  "mcpServers": {
+    "elen": {
+      "command": "npx",
+      "args": ["-y", "@learningnodes/elen-mcp@0.1.6"],
+      "env": {
+        "ELEN_LOCAL_API": "true"
+      }
+    }
+  }
+}
+```
+
+Open your IDE → MCP starts → local API starts on port 3333 → workstation auto-connects. No manual steps.
 
 ## Making Agents Log Decisions
 
@@ -165,7 +189,7 @@ Same config for all:
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["@learningnodes/elen-mcp"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.1.6"]
     }
   }
 }
@@ -179,13 +203,12 @@ All decisions are stored locally in `~/.elen/decisions.db` by default. Nothing l
 Elen/
 ├── packages/
 │   ├── core/           # Types, schemas, validation logic
-│   ├── sdk-ts/         # TypeScript SDK
-│   ├── mcp-server/     # MCP server for agent integration
-│   ├── dashboard/      # Decision dashboard (localhost:3737)
-│   ├── observer/       # Background decision extraction server
-│   └── consolidator/   # Cross-thread clustering engine
-├── homepage/           # elen.learningnodes.com
-└── SPEC.md             # Protocol specification
+│   ├── sdk-ts/         # TypeScript SDK (@learningnodes/elen)
+│   ├── mcp-server/     # MCP server + bundled local API (@learningnodes/elen-mcp)
+│   └── local-api/      # Standalone local API (for debugging)
+├── SPEC.md             # Protocol specification
+├── WHITE_PAPER.md      # Design principles & vision
+└── ROADMAP.md          # Product roadmap
 ```
 
 ## Contributing
