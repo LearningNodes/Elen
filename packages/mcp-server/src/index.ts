@@ -3,6 +3,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { createMcpServer, defaultStoragePath } from './server';
+import { startLocalApi } from './local-api';
 
 // MCP SDK overrides the ambient `process` type, stripping cwd().
 // We use execSync as a workaround.
@@ -96,6 +97,13 @@ async function main() {
   });
 
   await server.start();
+
+  // Opt-in: start local HTTP API for the Elen Workstation
+  if (process.env.ELEN_LOCAL_API === 'true') {
+    const dbPath = options.storagePath ?? defaultStoragePath();
+    const apiPort = parseInt(process.env.ELEN_API_PORT || '3333', 10);
+    startLocalApi(dbPath, apiPort);
+  }
 }
 
 if (require.main === module) {
