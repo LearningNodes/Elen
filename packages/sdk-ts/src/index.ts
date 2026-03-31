@@ -49,6 +49,10 @@ export class Elen {
   async getCompetencyProfile() {
     return this.client.getCompetencyProfile();
   }
+
+  async getContext(opts?: { domain?: string; limit?: number }) {
+    return this.client.getContext(opts);
+  }
 }
 
 export * from './client';

@@ -11,6 +11,7 @@ import {
   elenExpandTool,
   elenSupersedeTool,
   elenGetCompetencyTool,
+  elenGetContextTool,
   elenLogDecisionTool,
   elenSearchPrecedentsTool,
   handleCommit,
@@ -18,6 +19,7 @@ import {
   handleExpand,
   handleSupersede,
   handleGetCompetency,
+  handleGetContext,
   handleLogDecision,
   handleSearchPrecedents
 } from './tools';
@@ -57,6 +59,8 @@ export async function routeToolCall(elen: Elen, agentId: string, name: string, a
       return handleSupersede(elen, args);
     case elenGetCompetencyTool.name:
       return handleGetCompetency(elen, args, agentId);
+    case elenGetContextTool.name:
+      return handleGetContext(elen, args);
     case elenLogDecisionTool.name:
       return handleLogDecision(elen, args);
     case elenSearchPrecedentsTool.name:
@@ -88,6 +92,7 @@ export function createMcpServer(options: McpServerOptions) {
       elenExpandTool,
       elenSupersedeTool,
       elenGetCompetencyTool,
+      elenGetContextTool,
       elenLogDecisionTool,
       elenSearchPrecedentsTool
     ]

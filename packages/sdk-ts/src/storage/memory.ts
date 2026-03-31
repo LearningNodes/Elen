@@ -60,4 +60,6 @@ export class InMemoryStorage implements StorageAdapter {
     const weaknesses = domains.filter((d)=>{ const s=stats.get(d)!; return (s.conf/s.count) < 0.7;});
     return { agent_id: agentId, domains, strengths, weaknesses, updated_at: new Date().toISOString() };
   }
+
+  async logSearch(_query: string, _domain: string | undefined, _hits: number): Promise<void> { }
 }

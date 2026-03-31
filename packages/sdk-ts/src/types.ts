@@ -45,6 +45,17 @@ export interface SearchPrecedentsOptions {
   limit?: number;
 }
 
+export interface ContextThread {
+  domain: string;
+  count: number;
+  latest_timestamp: string;
+  decisions: Array<{ decision_id: string; question_text?: string; decision_text: string; status: string; timestamp: string }>;
+}
+
+export interface GetContextResult {
+  threads: ContextThread[];
+}
+
 export type DecisionRecordResult = DecisionRecord;
 export type CompetencyProfileResult = CompetencyProfile;
 export type ExpandedDecision = { record: DecisionRecord; constraints: ConstraintSet };

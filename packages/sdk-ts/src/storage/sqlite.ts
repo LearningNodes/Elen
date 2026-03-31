@@ -19,6 +19,7 @@ export class SQLiteStorage implements StorageAdapter {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS constraint_sets (constraint_set_id TEXT PRIMARY KEY, atoms TEXT NOT NULL, summary TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS decisions (decision_id TEXT PRIMARY KEY, decision_json TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS search_log (search_id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT NOT NULL, domain TEXT, project_id TEXT NOT NULL, hits INTEGER NOT NULL DEFAULT 0, cross_project_hits INTEGER NOT NULL DEFAULT 0, searched_at TEXT NOT NULL);
     `);
 
     // Check if records table exists and what schema it has
@@ -247,5 +248,18 @@ export class SQLiteStorage implements StorageAdapter {
     const strengths = domains.filter(d => { const s = stats.get(d)!; return (s.conf / s.count) >= 0.7; });
     const weaknesses = domains.filter(d => { const s = stats.get(d)!; return (s.conf / s.count) < 0.7; });
     return { agent_id: agentId, domains, strengths, weaknesses, updated_at: new Date().toISOString() };
+  }
+
+  /* ── Search logging ─────────────────────────────── */
+
+  async logSearch(query: string, domain: string | undefined, hits: number): Promise<void> {
+    this.db.prepare('INSERT INTO search_log(query, domain, project_id, hits, cross_project_hits, searched_at) VALUES (?,?,?,?,?,?)').run([
+      query,
+      domain ?? null,
+      this.projectId,
+      hits,
+      0,
+      new Date().toISOString()
+    ]);
   }
 }

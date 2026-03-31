@@ -17,4 +17,5 @@ export interface StorageAdapter {
   searchRecords(opts: SearchOptions): Promise<Array<MinimalDecisionRecord | DecisionRecord>>;
   getAgentDecisions(agentId: string, domain?: string): Promise<Array<MinimalDecisionRecord | DecisionRecord>>;
   getCompetencyProfile(agentId: string): Promise<CompetencyProfile>;
+  logSearch?(query: string, domain: string | undefined, hits: number): Promise<void>;
 }

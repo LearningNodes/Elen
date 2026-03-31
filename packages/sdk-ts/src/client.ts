@@ -11,7 +11,7 @@ import {
 } from '@learningnodes/elen-core';
 import { createId, createDecisionId, createConstraintSetId } from './id';
 import type { StorageAdapter } from './storage';
-import type { CompetencyProfileResult, CommitDecisionInput, LogDecisionInput, SearchOptions } from './types';
+import type { CompetencyProfileResult, CommitDecisionInput, LogDecisionInput, SearchOptions, GetContextResult, ContextThread } from './types';
 
 export class ElenClient {
   constructor(private readonly agentId: string, private readonly storage: StorageAdapter) { }
@@ -137,13 +137,18 @@ export class ElenClient {
 
   async searchPrecedents(query: string, opts: SearchOptions = {}) {
     const direct = await this.storage.searchRecords({ ...opts, query });
-    if (direct.length > 0) return direct;
-    return this.storage.searchRecords({ ...opts, limit: opts.limit ?? 5 });
+    if (direct.length > 0) {
+      await this.storage.logSearch?.(query, opts.domain, direct.length);
+      return direct;
+    }
+    const fallback = await this.storage.searchRecords({ ...opts, limit: opts.limit ?? 5 });
+    await this.storage.logSearch?.(query, opts.domain, fallback.length);
+    return fallback;
   }
 
   async suggest(opts: SearchOptions): Promise<Array<Partial<MinimalDecisionRecord>>> {
     const fullRecords = await this.storage.searchRecords(opts);
-    return fullRecords
+    const results = fullRecords
       .filter((r): r is MinimalDecisionRecord => 'decision_text' in r)
       .map((r) => ({
         decision_id: r.decision_id,
@@ -154,6 +159,8 @@ export class ElenClient {
         refs: r.refs,
         supersedes_id: r.supersedes_id
       }));
+    await this.storage.logSearch?.(opts.query ?? '', opts.domain, results.length);
+    return results;
   }
 
   async expand(decisionId: string): Promise<{ record: MinimalDecisionRecord, constraints: ConstraintSet } | null> {
@@ -168,5 +175,35 @@ export class ElenClient {
 
   async getCompetencyProfile(): Promise<CompetencyProfileResult> {
     return this.storage.getCompetencyProfile(this.agentId);
+  }
+
+  async getContext(opts?: { domain?: string; limit?: number }): Promise<GetContextResult> {
+    const records = await this.storage.searchRecords({ domain: opts?.domain });
+    const threadMap = new Map<string, ContextThread>();
+
+    for (const r of records) {
+      if (!('decision_text' in r)) continue;
+      const domain = r.domain ?? 'general';
+      let thread = threadMap.get(domain);
+      if (!thread) {
+        thread = { domain, count: 0, latest_timestamp: '', decisions: [] };
+        threadMap.set(domain, thread);
+      }
+      thread.count += 1;
+      if (r.timestamp > thread.latest_timestamp) thread.latest_timestamp = r.timestamp;
+      thread.decisions.push({
+        decision_id: r.decision_id,
+        question_text: r.question_text,
+        decision_text: r.decision_text,
+        status: r.status,
+        timestamp: r.timestamp
+      });
+    }
+
+    let threads = Array.from(threadMap.values());
+    threads.sort((a, b) => b.latest_timestamp.localeCompare(a.latest_timestamp));
+    if (opts?.limit) threads = threads.slice(0, opts.limit);
+
+    return { threads };
   }
 }
