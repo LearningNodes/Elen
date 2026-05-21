@@ -16,6 +16,24 @@ describe('MCP server CLI', () => {
     expect(parsed.agentId).toBe('default-agent');
     expect(defaultStoragePath().replace(/\\/g, '/')).toContain('.elen/decisions.db');
     expect(parsed.storagePath).toBeUndefined();
+    expect(parsed.connected).toBe(false);
+  });
+
+  it('parses --connected and LN identity flags', () => {
+    const parsed = parseCliArgs([
+      '--connected',
+      '--cloud-url',
+      'http://localhost:3900',
+      '--user-email',
+      'dev@learningnodes.com',
+      '--agent-id',
+      'cursor-agent'
+    ]);
+
+    expect(parsed.connected).toBe(true);
+    expect(parsed.cloudUrl).toBe('http://localhost:3900');
+    expect(parsed.userEmail).toBe('dev@learningnodes.com');
+    expect(parsed.agentId).toBe('cursor-agent');
   });
 });
 

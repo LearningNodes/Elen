@@ -1,4 +1,5 @@
 import { ElenClient } from './client';
+import { CloudMcpStorage } from './storage/cloud-mcp';
 import { InMemoryStorage, SQLiteStorage, type StorageAdapter } from './storage';
 import type { ElenConfig, CommitDecisionInput, LogDecisionInput, SearchOptions } from './types';
 
@@ -11,6 +12,26 @@ export class Elen {
   }
 
   private createStorage(config: ElenConfig): StorageAdapter {
+    if (config.storage === 'cloud') {
+      if (!config.apiUrl) {
+        throw new Error('Cloud MCP storage requires apiUrl (ELEN_CLOUD_URL)');
+      }
+      if (!config.userEmail) {
+        throw new Error('Cloud MCP storage requires userEmail (ELEN_USER_EMAIL)');
+      }
+      const localFallback =
+        config.sqlitePath != null
+          ? new SQLiteStorage(config.sqlitePath, config.projectId, config.defaultProjectIsolation ?? 'strict')
+          : undefined;
+      return new CloudMcpStorage({
+        apiUrl: config.apiUrl,
+        userEmail: config.userEmail,
+        agentId: config.agentId,
+        apiKey: config.apiKey,
+        localFallback
+      });
+    }
+
     if (config.storage === 'sqlite') {
       return new SQLiteStorage(config.sqlitePath ?? 'elen.db', config.projectId, config.defaultProjectIsolation ?? 'strict');
     }

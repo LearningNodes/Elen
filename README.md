@@ -103,7 +103,7 @@ Agent faces a problem
 | **Top-K Pointers** | Agents retrieve IDs and summaries first, saving tokens. |
 | **Constraint Sets** | Reusable, SHA-256 hashed plain-text rules ("budget < 500ms"). |
 | **Explicit DAG** | Decisions explicitly reference (`refs`) or override (`supersedes`) others. |
-| **Project Segmentation** | Decisions scoped per project with strict isolation by default. Cross-project sharing is opt-in. |
+| **Project Segmentation** | Decisions scoped per project with **strict isolation by default** (open core). Cross-workspace / shared-pool discovery is **proprietary** — see `elen-cloud/ai-service` `PostgresStorage`, not shipped in `@learningnodes/elen*`. |
 
 ## What's Built
 
@@ -114,8 +114,8 @@ Agent faces a problem
 | Local SQLite storage (`~/.elen/decisions.db`) | ✅ Shipped |
 | Constraint Set hashing & Deduplication | ✅ Shipped |
 | Explicit Graph DAG (refs & supersedes wiring) | ✅ Shipped |
-| Project segmentation with auto-detection from git/package.json | ✅ Shipped |
-| Shared Cross-Project Workspaces | ✅ Shipped |
+| Project segmentation with auto-detection from git/package.json | ✅ Shipped (open core) |
+| Cross-workspace / shared-pool prior discovery | ❌ Not open — proprietary `elen-cloud` (`PostgresStorage`) |
 | **Elen Workstation** (cloud dashboard + local data) | ✅ Shipped |
 | **Bundled Local API** (opt-in via `ELEN_LOCAL_API=true`) | ✅ Shipped |
 
@@ -195,7 +195,17 @@ Same config for all:
 }
 ```
 
-All decisions are stored locally in `~/.elen/decisions.db` by default. Nothing leaves your machine unless you explicitly share via cross-project rules or join a team network.
+All decisions are stored locally in `~/.elen/decisions.db` by default. Nothing leaves your machine unless you opt into proprietary cloud sync (`elen-cloud`).
+
+### Open-core boundary
+
+| Open (AGPL) | Proprietary (`elen-cloud`) |
+|-------------|----------------------------|
+| MCP + 4 verbs, `@learningnodes/elen*`, local SQLite | `ai-service` (Elen Lattice LLM routes), `PostgresStorage`, operator panel, billing |
+| **Principal/project-scoped** isolation by default | Cross-workspace prior-decision pool (interim; sharing panel planned) |
+| Strict per-project `Suggest` / `Expand` | Workstation gateway proxy + `workspace_billing` |
+
+Learning Nodes Workstation uses the proprietary stack for live AI; the npm packages remain the portable open-core surface.
 
 ## Project Structure
 

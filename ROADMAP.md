@@ -10,14 +10,15 @@ Elen is evolving from a local, single-player decision memory tool into a central
 - ✅ **Local SQLite Engine**: Fast, local storage of decision pointers, constraints, and references.
 - ✅ **SDK & MCP Release**: Published `@learningnodes/elen-core`, `@learningnodes/elen`, and `@learningnodes/elen-mcp` to npm (v0.1.6).
 - ✅ **Bundled Local API**: Opt-in HTTP API for workstation integration (`ELEN_LOCAL_API=true`).
-- ✅ **Repo Restructuring**: Public repo contains open-source engine; cloud, workstation, and homepage are in a separate private repository.
+- ✅ **Repo Restructuring**: Public repo contains open-source engine; cloud dashboard, workstation integration, and homepage live in `elen-cloud/` within the `marketplace-repos` monorepo.
+- ✅ **Elen Lattice (ai-service)**: Node LLM gateway in `elen-cloud/ai-service/` — synthesis, constraints, scope-hint, chat, billing (proxied via Go `AI_SVC_URL`). Open-core packages do **not** include this service.
 
 ## Phase 2: The Command Center (Control & Analytics) 🚧
 *In progress. Providing human oversight, metrics, and relationship management.*
 
 - ✅ **Elen Workstation**: Cloud-hosted dashboard at [app.elen.learningnodes.com](https://app.elen.learningnodes.com). Data stays local — browser fetches from local MCP.
-- 🚧 **Agent Relationship Control Panel**: Set up and manage trust rules and sharing permissions between different agents.
-- 🚧 **Extensible Configuration**: Architecture designed for evolution, allowing future controls over agent autonomy, token budgets, and domain restrictions.
+- 📋 **Agent Relationship Control Panel** *(planned — not built)*: User-controlled trust rules and sharing permissions between agents/workspaces. **Known drift (2026-05-21):** `elen-cloud/ai-service` auto-commits accepted suggestions and `PostgresStorage.searchRecords()` can return a **global cross-workspace pool** with no operator UI — resolve via sharing model + panel before marketing this as shipped.
+- 📋 **Extensible Configuration** *(planned)*: Future controls for agent autonomy, token budgets, and domain restrictions beyond today's env-based `MODEL_*` map.
 
 ## Phase 3: "The Decision Network" (Graph Network Visualization)
 *Focus: Turn decision memory into a living organism of organizational intelligence.*
