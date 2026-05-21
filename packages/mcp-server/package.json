@@ -13,7 +13,7 @@
     "lint": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@learningnodes/elen": "^0.1.5",
+    "@learningnodes/elen": "file:../sdk-ts",
     "@modelcontextprotocol/sdk": "^1.17.4",
     "cors": "^2.8.6",
     "express": "^5.2.1"

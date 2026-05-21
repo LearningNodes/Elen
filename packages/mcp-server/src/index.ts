@@ -13,6 +13,10 @@ export interface CliOptions {
   agentId: string;
   projectId: string;
   storagePath?: string;
+  connected: boolean;
+  cloudUrl?: string;
+  userEmail?: string;
+  cloudApiKey?: string;
 }
 
 /**
@@ -56,6 +60,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let agentId = 'default-agent';
   let projectId: string | undefined;
   let storagePath: string | undefined;
+  let connected = process.env.ELEN_CONNECTED === 'true' || process.env.ELEN_CONNECTED === '1';
+  let cloudUrl = process.env.ELEN_CLOUD_URL;
+  let userEmail = process.env.ELEN_USER_EMAIL;
+  let cloudApiKey = process.env.ELEN_CLOUD_API_KEY;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -75,25 +83,53 @@ export function parseCliArgs(argv: string[]): CliOptions {
     if (arg === '--storage') {
       storagePath = argv[i + 1] ?? storagePath;
       i += 1;
+      continue;
+    }
+
+    if (arg === '--connected') {
+      connected = true;
+      continue;
+    }
+
+    if (arg === '--cloud-url') {
+      cloudUrl = argv[i + 1] ?? cloudUrl;
+      i += 1;
+      continue;
+    }
+
+    if (arg === '--user-email') {
+      userEmail = argv[i + 1] ?? userEmail;
+      i += 1;
     }
   }
 
   return {
     agentId,
     projectId: projectId ?? detectProject(),
-    storagePath
+    storagePath,
+    connected,
+    cloudUrl,
+    userEmail,
+    cloudApiKey
   };
 }
 
 async function main() {
   const options = parseCliArgs(process.argv.slice(2));
 
-  process.stderr.write(`✦ Elen MCP starting — agent: ${options.agentId}, project: ${options.projectId}\n`);
+  const modeLabel = options.connected ? 'connected (cloud commits)' : 'local';
+  process.stderr.write(
+    `✦ Elen MCP starting — agent: ${options.agentId}, project: ${options.projectId}, mode: ${modeLabel}\n`
+  );
 
   const server = createMcpServer({
     agentId: options.agentId,
     projectId: options.projectId,
-    storagePath: options.storagePath ?? defaultStoragePath()
+    storagePath: options.storagePath ?? defaultStoragePath(),
+    connected: options.connected,
+    cloudUrl: options.cloudUrl,
+    userEmail: options.userEmail,
+    cloudApiKey: options.cloudApiKey
   });
 
   await server.start();

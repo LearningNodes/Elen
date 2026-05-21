@@ -28,6 +28,11 @@ export interface McpServerOptions {
   agentId: string;
   projectId?: string;
   storagePath?: string;
+  /** LN-connected: commits go to cloud mcp_decisions (requires userEmail + cloudUrl). */
+  connected?: boolean;
+  cloudUrl?: string;
+  userEmail?: string;
+  cloudApiKey?: string;
 }
 
 export function defaultStoragePath(): string {
@@ -38,13 +43,29 @@ export function createElenClient(options: McpServerOptions): Elen {
   const sqlitePath = options.storagePath ?? defaultStoragePath();
   mkdirSync(dirname(sqlitePath), { recursive: true });
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  if (options.connected) {
+    const cloudUrl = options.cloudUrl ?? process.env.ELEN_CLOUD_URL;
+    const userEmail = options.userEmail ?? process.env.ELEN_USER_EMAIL;
+    if (!cloudUrl || !userEmail) {
+      throw new Error('Connected MCP mode requires ELEN_CLOUD_URL and ELEN_USER_EMAIL (or --cloud-url / --user-email)');
+    }
+    return new Elen({
+      agentId: options.agentId,
+      projectId: options.projectId,
+      storage: 'cloud',
+      apiUrl: cloudUrl,
+      userEmail,
+      apiKey: options.cloudApiKey ?? process.env.ELEN_CLOUD_API_KEY,
+      sqlitePath
+    });
+  }
+
   return new Elen({
     agentId: options.agentId,
     projectId: options.projectId,
-    storage: 'sqlite' as const,
+    storage: 'sqlite',
     sqlitePath
-  } as any);
+  });
 }
 
 export async function routeToolCall(elen: Elen, agentId: string, name: string, args: unknown): Promise<unknown> {

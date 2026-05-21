@@ -3,10 +3,12 @@ import type { CompetencyProfile, DecisionRecord, DecisionStatus, ConstraintSet }
 export interface ElenConfig {
   agentId: string;
   projectId?: string;
-  storage?: 'memory' | 'sqlite';
+  storage?: 'memory' | 'sqlite' | 'cloud';
   sqlitePath?: string;
   apiUrl?: string;
   apiKey?: string;
+  /** Required when storage is 'cloud' — LN identity for X-User-Email attribution. */
+  userEmail?: string;
   defaultProjectIsolation?: 'strict' | 'open';
 }
 
