@@ -1,8 +1,15 @@
 {
     "name": "@learningnodes/elen-consolidator",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "license": "AGPL-3.0",
     "main": "consolidator.js",
+    "exports": {
+        ".": {
+            "types": "./index.d.ts",
+            "default": "./consolidator.js"
+        }
+    },
+    "types": "./index.d.ts",
     "scripts": {
         "start": "node consolidator.js"
     },

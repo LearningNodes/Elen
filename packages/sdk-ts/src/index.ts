@@ -1,14 +1,25 @@
 import { ElenClient } from './client';
 import { CloudMcpStorage } from './storage/cloud-mcp';
 import { InMemoryStorage, SQLiteStorage, type StorageAdapter } from './storage';
-import type { ElenConfig, CommitDecisionInput, LogDecisionInput, SearchOptions } from './types';
+import type { CommitDecisionInput, ElenConfig, LogDecisionInput, SearchOptions } from './types';
+import type { ExportBundle } from './admin';
 
 export class Elen {
   private readonly client: ElenClient;
+  private readonly storage: StorageAdapter;
+  private readonly agentId: string;
 
   constructor(config: ElenConfig) {
-    const storage = this.createStorage(config);
-    this.client = new ElenClient(config.agentId, storage);
+    this.agentId = config.agentId;
+    this.storage = this.createStorage(config);
+    this.client = new ElenClient(config.agentId, this.storage);
+  }
+
+  private requireSqlite(): SQLiteStorage {
+    if (!(this.storage instanceof SQLiteStorage)) {
+      throw new Error('This operation requires local SQLite storage');
+    }
+    return this.storage;
   }
 
   private createStorage(config: ElenConfig): StorageAdapter {
@@ -74,9 +85,63 @@ export class Elen {
   async getContext(opts?: { domain?: string; limit?: number }) {
     return this.client.getContext(opts);
   }
+
+  getStatus() {
+    return this.client.getStatus();
+  }
+
+  async consolidate() {
+    return this.client.consolidateSuggest();
+  }
+
+  getStats() {
+    return this.client.getStats();
+  }
+
+  renameProject(oldId: string, newId: string, opts?: { backup?: boolean }) {
+    const db = this.requireSqlite();
+    if (opts?.backup !== false) db.backup();
+    return db.renameProject(oldId, newId);
+  }
+
+  mergeProjects(sourceIds: string[], destId: string, opts?: { backup?: boolean }) {
+    const db = this.requireSqlite();
+    if (opts?.backup !== false) db.backup();
+    return db.mergeProjects(sourceIds, destId);
+  }
+
+  prune(opts?: { project?: string; backup?: boolean }) {
+    const db = this.requireSqlite();
+    if (opts?.backup !== false) db.backup();
+    return db.pruneBlank(opts?.project);
+  }
+
+  backup(destPath?: string) {
+    return this.requireSqlite().backup(destPath);
+  }
+
+  exportJson(): ExportBundle {
+    return this.requireSqlite().exportJson();
+  }
+
+  importJson(bundle: ExportBundle) {
+    const db = this.requireSqlite();
+    db.backup();
+    return db.importJson(bundle);
+  }
+
+  close(): void {
+    if (this.storage instanceof SQLiteStorage) {
+      this.storage.close();
+    }
+  }
 }
 
 export * from './client';
 export * from './id';
 export * from './storage';
 export * from './types';
+export * from './project-resolve';
+export * from './similarity';
+export * from './sqlite-open';
+export type { ExportBundle } from './admin';

@@ -14,6 +14,8 @@ import {
   elenGetContextTool,
   elenLogDecisionTool,
   elenSearchPrecedentsTool,
+  elenStatusTool,
+  elenConsolidateTool,
   handleCommit,
   handleSuggest,
   handleExpand,
@@ -21,7 +23,9 @@ import {
   handleGetCompetency,
   handleGetContext,
   handleLogDecision,
-  handleSearchPrecedents
+  handleSearchPrecedents,
+  handleStatus,
+  handleConsolidate
 } from './tools';
 
 export interface McpServerOptions {
@@ -68,7 +72,13 @@ export function createElenClient(options: McpServerOptions): Elen {
   });
 }
 
-export async function routeToolCall(elen: Elen, agentId: string, name: string, args: unknown): Promise<unknown> {
+export async function routeToolCall(
+  elen: Elen,
+  agentId: string,
+  name: string,
+  args: unknown,
+  dbPath?: string
+): Promise<unknown> {
   switch (name) {
     case elenCommitTool.name:
       return handleCommit(elen, args);
@@ -82,6 +92,10 @@ export async function routeToolCall(elen: Elen, agentId: string, name: string, a
       return handleGetCompetency(elen, args, agentId);
     case elenGetContextTool.name:
       return handleGetContext(elen, args);
+    case elenStatusTool.name:
+      return handleStatus(elen);
+    case elenConsolidateTool.name:
+      return handleConsolidate(elen, args, dbPath ?? defaultStoragePath());
     case elenLogDecisionTool.name:
       return handleLogDecision(elen, args);
     case elenSearchPrecedentsTool.name:
@@ -92,6 +106,7 @@ export async function routeToolCall(elen: Elen, agentId: string, name: string, a
 }
 
 export function createMcpServer(options: McpServerOptions) {
+  const sqlitePath = options.storagePath ?? defaultStoragePath();
   const elen = createElenClient(options);
 
   const server = new Server(
@@ -114,13 +129,21 @@ export function createMcpServer(options: McpServerOptions) {
       elenSupersedeTool,
       elenGetCompetencyTool,
       elenGetContextTool,
+      elenStatusTool,
+      elenConsolidateTool,
       elenLogDecisionTool,
       elenSearchPrecedentsTool
     ]
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const result = await routeToolCall(elen, options.agentId, request.params.name, request.params.arguments);
+    const result = await routeToolCall(
+      elen,
+      options.agentId,
+      request.params.name,
+      request.params.arguments,
+      sqlitePath
+    );
 
     return {
       content: [

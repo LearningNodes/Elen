@@ -70,13 +70,46 @@ Add Elen as an MCP server — your agent gets tools with descriptions that tell 
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.1.6"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.1.7"]
     }
   }
 }
 ```
 
-Project identity is auto-detected from the git remote or `package.json` in the working directory.
+### Project identity (DS-0.5)
+
+`project_id` is resolved in this order — **never** from your OS username:
+
+1. `--project` flag or `"project"` in `~/.elen/config.json`
+2. Optional `venture_map` in config (folder segment → project, e.g. `learningnodes` across many repos)
+3. Normalized `git remote get-url origin` → `owner/repo`
+4. Git repo root directory name
+
+If resolution fails, MCP/CLI exits with guidance instead of writing to a wrong namespace.
+
+```json
+{
+  "project": "my-app",
+  "venture_map": {
+    "learningnodes": ["marketplace-repos", "elen"]
+  }
+}
+```
+
+### Observability & CLI
+
+| Tool / command | Purpose |
+|----------------|---------|
+| `elen_get_context` | Threads **plus** `meta` (agent, project, db path, counts, other projects) |
+| `elen_status` / `elen status` | Same meta snapshot |
+| `elen_consolidate` / `elen consolidate` | Suggest duplicate/stale clusters (`--apply` runs thread enricher after backup) |
+| `elen project rename\|merge` | Re-tag `project_id` (+ `search_log`) |
+| `elen prune` | Drop blank records (`--project` optional) |
+| `elen backup` | WAL checkpoint + copy (auto before destructive ops) |
+| `elen export` / `elen import` | JSON portability |
+| `elen stats` | Per-project/agent counts + duplicate candidates |
+
+Startup stderr logs: `agent`, `project`, `db`, record counts. Native SQLite uses WAL + `busy_timeout=5000` for safe multi-client access. If the native module ABI mismatches your Node version, you get an actionable message — run `npx @learningnodes/elen-mcp@latest` so each client gets a matching prebuild.
 
 > [!IMPORTANT]
 > **MCP alone is not enough.** Agents won't reliably call `elen_suggest` or `elen_commit` without behavioral priming. Add an `AGENTS.md` file to your repo root — see [Making Agents Log Decisions](#making-agents-log-decisions) below.
@@ -114,7 +147,10 @@ Agent faces a problem
 | Local SQLite storage (`~/.elen/decisions.db`) | ✅ Shipped |
 | Constraint Set hashing & Deduplication | ✅ Shipped |
 | Explicit Graph DAG (refs & supersedes wiring) | ✅ Shipped |
-| Project segmentation with auto-detection from git/package.json | ✅ Shipped (open core) |
+| Project segmentation (git remote / venture map / explicit; never OS username) | ✅ DS-0.5 |
+| Local graph observability (`meta`, `elen_status`, startup counts) | ✅ DS-0.5 |
+| Commit-time duplicate suggestions + `elen consolidate` | ✅ DS-0.5 |
+| Admin CLI (`rename`, `merge`, `prune`, `backup`, `export`, `import`, `stats`) | ✅ DS-0.5 |
 | Cross-workspace / shared-pool prior discovery | ❌ Not open — proprietary `elen-cloud` (`PostgresStorage`) |
 | **Elen Workstation** (cloud dashboard + local data) | ✅ Shipped |
 | **Bundled Local API** (opt-in via `ELEN_LOCAL_API=true`) | ✅ Shipped |
@@ -132,7 +168,7 @@ The Elen Workstation is a visual dashboard for your decision network at [app.ele
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.1.6"],
+      "args": ["-y", "@learningnodes/elen-mcp@0.1.7"],
       "env": {
         "ELEN_LOCAL_API": "true"
       }
@@ -189,7 +225,7 @@ Same config for all:
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.1.6"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.1.7"]
     }
   }
 }

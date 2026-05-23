@@ -442,4 +442,8 @@ function main() {
     }
 }
 
-main();
+module.exports = { consolidate };
+
+if (require.main === module) {
+    main();
+}

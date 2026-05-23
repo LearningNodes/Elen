@@ -11,7 +11,20 @@ import {
 } from '@learningnodes/elen-core';
 import { createId, createDecisionId, createConstraintSetId } from './id';
 import type { StorageAdapter } from './storage';
-import type { CompetencyProfileResult, CommitDecisionInput, LogDecisionInput, SearchOptions, GetContextResult, ContextThread } from './types';
+import { findDuplicateCandidates, suggestConsolidation } from './graph-meta';
+import type { SQLiteStorage } from './storage/sqlite';
+import type {
+  CommitDecisionResult,
+  CompetencyProfileResult,
+  CommitDecisionInput,
+  ConsolidateResult,
+  GraphMeta,
+  GraphStats,
+  LogDecisionInput,
+  SearchOptions,
+  GetContextResult,
+  ContextThread
+} from './types';
 
 export class ElenClient {
   constructor(private readonly agentId: string, private readonly storage: StorageAdapter) { }
@@ -85,7 +98,29 @@ export class ElenClient {
     return record;
   }
 
-  async commitDecision(input: CommitDecisionInput): Promise<MinimalDecisionRecord> {
+  async commitDecision(input: CommitDecisionInput): Promise<CommitDecisionResult> {
+    if (!input.force && 'listActiveForSimilarity' in this.storage) {
+      const sqlite = this.storage as SQLiteStorage;
+      const similar = findDuplicateCandidates(
+        { question: input.question, decisionText: input.decisionText, domain: input.domain },
+        sqlite.listActiveForSimilarity()
+      );
+      if (similar.length > 0) {
+        return {
+          blocked: true,
+          similar_candidates: similar,
+          message:
+            `Similar active decision(s) found — supersede, add refs, differentiate, or pass force:true. ` +
+            `Top: ${similar.map((c) => `${c.decision_id} (${c.score.toFixed(2)})`).join(', ')}`
+        };
+      }
+    }
+
+    const record = await this.writeCommit(input);
+    return { committed: record, blocked: false };
+  }
+
+  private async writeCommit(input: CommitDecisionInput): Promise<MinimalDecisionRecord> {
     const now = new Date().toISOString();
 
     const constraintSetId = createConstraintSetId(input.constraints);
@@ -121,14 +156,14 @@ export class ElenClient {
     return record;
   }
 
-  async supersedeDecision(oldDecisionId: string, input: CommitDecisionInput): Promise<MinimalDecisionRecord> {
+  async supersedeDecision(oldDecisionId: string, input: CommitDecisionInput): Promise<CommitDecisionResult> {
     const oldRecord = await this.storage.getRecord(oldDecisionId);
     if (oldRecord && 'status' in oldRecord) {
       oldRecord.status = 'superseded';
       await this.storage.saveRecord(oldRecord);
     }
 
-    return this.commitDecision({ ...input, supersedesId: oldDecisionId });
+    return this.commitDecision({ ...input, supersedesId: oldDecisionId, force: input.force ?? true });
   }
 
   async searchRecords(opts: SearchOptions) {
@@ -177,6 +212,39 @@ export class ElenClient {
     return this.storage.getCompetencyProfile(this.agentId);
   }
 
+  getStatus(): GraphMeta {
+    if (!('getGraphMeta' in this.storage)) {
+      throw new Error('getStatus requires SQLite storage');
+    }
+    return (this.storage as SQLiteStorage).getGraphMeta(this.agentId);
+  }
+
+  async consolidateSuggest(): Promise<ConsolidateResult> {
+    const records = await this.storage.searchRecords({});
+    const minimal = records.filter((r): r is MinimalDecisionRecord => 'decision_text' in r);
+    const { clusters, suggestions } = suggestConsolidation(minimal);
+    const meta =
+      'getGraphMeta' in this.storage
+        ? (this.storage as SQLiteStorage).getGraphMeta(this.agentId)
+        : {
+            agent_id: this.agentId,
+            project_id: 'unknown',
+            db_path: '',
+            total: minimal.length,
+            active: minimal.filter((r) => r.status === 'active').length,
+            superseded: minimal.filter((r) => r.status === 'superseded').length,
+            projects: []
+          };
+    return { clusters, suggestions, meta };
+  }
+
+  getStats(): GraphStats {
+    if (!('getStats' in this.storage)) {
+      throw new Error('getStats requires SQLite storage');
+    }
+    return (this.storage as SQLiteStorage).getStats(this.agentId);
+  }
+
   async getContext(opts?: { domain?: string; limit?: number }): Promise<GetContextResult> {
     const records = await this.storage.searchRecords({ domain: opts?.domain });
     const threadMap = new Map<string, ContextThread>();
@@ -204,6 +272,19 @@ export class ElenClient {
     threads.sort((a, b) => b.latest_timestamp.localeCompare(a.latest_timestamp));
     if (opts?.limit) threads = threads.slice(0, opts.limit);
 
-    return { threads };
+    const meta =
+      'getGraphMeta' in this.storage
+        ? (this.storage as SQLiteStorage).getGraphMeta(this.agentId)
+        : {
+            agent_id: this.agentId,
+            project_id: 'memory',
+            db_path: '',
+            total: records.length,
+            active: records.filter((r) => 'status' in r && r.status === 'active').length,
+            superseded: records.filter((r) => 'status' in r && r.status === 'superseded').length,
+            projects: []
+          };
+
+    return { threads, meta };
   }
 }

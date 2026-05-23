@@ -19,6 +19,10 @@ export const elenCommitTool = {
                 type: 'array',
                 items: { type: 'string' },
                 description: 'Explicit pointers to other decision IDs or artifacts'
+            },
+            force: {
+                type: 'boolean',
+                description: 'Commit even when similar active decisions exist (after reviewing similar_candidates)'
             }
         },
         required: ['question', 'domain', 'decisionText', 'constraints']
@@ -30,7 +34,8 @@ export const commitInputSchema = z.object({
     domain: z.string().min(1),
     decisionText: z.string().min(1),
     constraints: z.array(z.string().min(1)),
-    refs: z.array(z.string()).optional()
+    refs: z.array(z.string()).optional(),
+    force: z.boolean().optional()
 });
 
 export async function handleCommit(elen: Elen, args: unknown): Promise<unknown> {
