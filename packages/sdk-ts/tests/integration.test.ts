@@ -44,6 +44,7 @@ describe('Elen integration', () => {
     const records = await elen.searchRecords({ query: 'redis' });
     expect(records).toHaveLength(1);
 
+    elen.close();
     rmSync(dbPath, { force: true });
   });
 });

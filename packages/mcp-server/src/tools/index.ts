@@ -12,6 +12,8 @@ export {
   validateLogDecisionInput,
   validateSearchInput
 } from './legacy';
+export { elenStatusTool, handleStatus } from './status';
+export { elenConsolidateTool, handleConsolidate, consolidateInputSchema } from './consolidate';
 
 export const ELEN_TOOLS = [
   'elen_commit',
@@ -20,6 +22,8 @@ export const ELEN_TOOLS = [
   'elen_supersede',
   'elen_get_competency',
   'elen_get_context',
+  'elen_status',
+  'elen_consolidate',
   'elen_log_decision',
   'elen_search_precedents'
 ] as const;

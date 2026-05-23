@@ -1,6 +1,6 @@
 {
     "name": "@learningnodes/elen-local-api",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "description": "Lightweight read-only HTTP API that exposes your local Elen decisions.db for the cloud dashboard",
     "main": "index.js",
     "license": "AGPL-3.0",

@@ -95,6 +95,7 @@ describe('Storage adapters', () => {
     expect(await storage.searchRecords({ parentPrompt: 'auth system' })).toHaveLength(1);
     expect((await storage.getCompetencyProfile('agent-a')).domains).toContain('infrastructure');
 
+    storage.close();
     rmSync(dbPath, { force: true });
   });
 });

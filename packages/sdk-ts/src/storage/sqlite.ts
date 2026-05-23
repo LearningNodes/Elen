@@ -1,18 +1,161 @@
-import Database from 'better-sqlite3';
+import type Database from 'better-sqlite3';
 import type { CompetencyProfile, ConstraintSet, DecisionContext, DecisionRecord, MinimalDecisionRecord } from '@learningnodes/elen-core';
+import { backupDatabase, exportDatabase, importDatabase, type ExportBundle } from '../admin';
+import { buildGraphMeta } from '../graph-meta';
+import { cosineSimilarity } from '../similarity';
+import { openSqliteDatabase } from '../sqlite-open';
+import type { GraphMeta, GraphStats } from '../types';
 import type { SearchOptions } from '../types';
 import type { StorageAdapter } from './interface';
 
 export class SQLiteStorage implements StorageAdapter {
   private readonly db: Database.Database;
+  private readonly dbPath: string;
   private readonly projectId: string;
   private readonly defaultIsolation: 'strict' | 'open';
 
   constructor(path: string, projectId: string = 'default', defaultIsolation: 'strict' | 'open' = 'strict') {
-    this.db = new Database(path);
+    this.dbPath = path;
+    this.db = openSqliteDatabase(path);
     this.projectId = projectId;
     this.defaultIsolation = defaultIsolation;
     this.init();
+  }
+
+  getPath(): string {
+    return this.dbPath;
+  }
+
+  getProjectId(): string {
+    return this.projectId;
+  }
+
+  listRecordRows(): Array<{
+    project_id: string;
+    status: string;
+    agent_id: string;
+    question_text: string | null;
+    decision_text: string;
+    domain: string;
+    decision_id: string;
+  }> {
+    return this.db
+      .prepare(
+        `SELECT project_id, status, agent_id, question_text, decision_text, domain, decision_id
+         FROM records WHERE status != 'withdrawn'`
+      )
+      .all() as Array<{
+      project_id: string;
+      status: string;
+      agent_id: string;
+      question_text: string | null;
+      decision_text: string;
+      domain: string;
+      decision_id: string;
+    }>;
+  }
+
+  getGraphMeta(agentId: string): GraphMeta {
+    return buildGraphMeta(this.dbPath, agentId, this.projectId, this.listRecordRows());
+  }
+
+  renameProject(oldId: string, newId: string): { records: number; search_log: number } {
+    const r1 = this.db.prepare('UPDATE records SET project_id = ? WHERE project_id = ?').run(newId, oldId);
+    const r2 = this.db.prepare('UPDATE search_log SET project_id = ? WHERE project_id = ?').run(newId, oldId);
+    return { records: r1.changes, search_log: r2.changes };
+  }
+
+  mergeProjects(sourceIds: string[], destId: string): { records: number; search_log: number } {
+    let records = 0;
+    let search_log = 0;
+    for (const src of sourceIds) {
+      if (src === destId) continue;
+      const r = this.renameProject(src, destId);
+      records += r.records;
+      search_log += r.search_log;
+    }
+    return { records, search_log };
+  }
+
+  pruneBlank(projectFilter?: string): { removed: number } {
+    let query = `DELETE FROM records WHERE (
+      question_text IS NULL OR trim(question_text) = ''
+    ) AND (
+      decision_text IS NULL OR trim(decision_text) = ''
+    )`;
+    const params: string[] = [];
+    if (projectFilter) {
+      query += ' AND project_id = ?';
+      params.push(projectFilter);
+    }
+    const result = this.db.prepare(query).run(...params);
+    return { removed: result.changes };
+  }
+
+  backup(destPath?: string): string {
+    return backupDatabase(this.dbPath, destPath);
+  }
+
+  exportJson(): ExportBundle {
+    return exportDatabase(this.db);
+  }
+
+  importJson(bundle: ExportBundle): { records: number } {
+    return importDatabase(this.db, bundle);
+  }
+
+  getStats(agentId: string): GraphStats {
+    const meta = this.getGraphMeta(agentId);
+    const agents = this.db
+      .prepare(
+        `SELECT agent_id, COUNT(*) AS count FROM records
+         WHERE project_id = ? GROUP BY agent_id ORDER BY count DESC`
+      )
+      .all(this.projectId) as Array<{ agent_id: string; count: number }>;
+
+    const activeRows = this.listRecordRows().filter(
+      (r) => r.project_id === this.projectId && r.status === 'active'
+    );
+    const duplicate_candidates: GraphStats['duplicate_candidates'] = [];
+    for (let i = 0; i < activeRows.length; i += 1) {
+      for (let j = i + 1; j < activeRows.length; j += 1) {
+        const a = activeRows[i];
+        const b = activeRows[j];
+        const corpusA = `${a.question_text ?? ''} ${a.decision_text}`;
+        const corpusB = `${b.question_text ?? ''} ${b.decision_text}`;
+        const score = cosineSimilarity(corpusA, corpusB);
+        if (score >= 0.65) {
+          duplicate_candidates.push({
+            decision_ids: [a.decision_id, b.decision_id],
+            score
+          });
+        }
+      }
+    }
+
+    return { ...meta, agents, duplicate_candidates };
+  }
+
+  close(): void {
+    this.db.close();
+  }
+
+  listActiveForSimilarity(): Array<{
+    decision_id: string;
+    question_text?: string;
+    decision_text: string;
+    domain: string;
+    status: string;
+  }> {
+    return this.listRecordRows()
+      .filter((r) => r.project_id === this.projectId && r.status === 'active')
+      .map((r) => ({
+        decision_id: r.decision_id,
+        question_text: r.question_text ?? undefined,
+        decision_text: r.decision_text,
+        domain: r.domain,
+        status: r.status
+      }));
   }
 
   private init() {

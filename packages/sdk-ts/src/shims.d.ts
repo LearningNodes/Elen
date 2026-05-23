@@ -3,15 +3,22 @@ declare module 'nanoid' {
 }
 
 declare module 'better-sqlite3' {
+  interface RunResult {
+    changes: number;
+  }
+
   interface Statement {
-    run(params?: unknown): unknown;
+    run(...params: unknown[]): RunResult;
     get(...params: unknown[]): unknown;
-    all(params?: unknown): unknown[];
+    all(...params: unknown[]): unknown[];
   }
 
   interface DatabaseInstance {
     exec(sql: string): void;
     prepare(sql: string): Statement;
+    pragma(cmd: string): unknown;
+    close(): void;
+    transaction<T>(fn: (batch: T) => void): (batch: T) => void;
   }
 
   interface DatabaseConstructor {

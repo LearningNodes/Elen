@@ -1,12 +1,17 @@
 {
   "name": "@learningnodes/elen-mcp",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "license": "AGPL-3.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "elen-mcp": "dist/index.js"
+    "elen-mcp": "dist/index.js",
+    "elen": "dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "vitest run",
@@ -14,11 +19,13 @@
   },
   "dependencies": {
     "@learningnodes/elen": "file:../sdk-ts",
+    "@learningnodes/elen-consolidator": "file:../consolidator",
     "@modelcontextprotocol/sdk": "^1.17.4",
     "cors": "^2.8.6",
     "express": "^5.2.1"
   },
   "devDependencies": {
+    "better-sqlite3": "^11.7.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

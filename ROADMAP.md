@@ -8,7 +8,8 @@ Elen is evolving from a local, single-player decision memory tool into a central
 
 - ✅ **Minimal Token Protocol**: `Suggest`, `Expand`, `Commit`, and `Supersede` primitives in the MCP server.
 - ✅ **Local SQLite Engine**: Fast, local storage of decision pointers, constraints, and references.
-- ✅ **SDK & MCP Release**: Published `@learningnodes/elen-core`, `@learningnodes/elen`, and `@learningnodes/elen-mcp` to npm (v0.1.6).
+- ✅ **SDK & MCP Release**: Published `@learningnodes/elen-core`, `@learningnodes/elen`, and `@learningnodes/elen-mcp` to npm (v0.1.7 pending publish).
+- ✅ **DS-0.5 — Local graph integrity & DX** *(feat/ds-0.5-mcp-dx)*: Observable namespace (`elen_get_context.meta`, `elen_status`), safe native SQLite (WAL, ABI guard), project resolution without OS username, commit-time dedup prompts, suggest-only `elen_consolidate`, admin CLI (`rename`/`merge`/`prune`/`backup`/`export`/`import`/`stats`). Prerequisite for cloud sync/sharing (DS-2+).
 - ✅ **Bundled Local API**: Opt-in HTTP API for workstation integration (`ELEN_LOCAL_API=true`).
 - ✅ **Repo Restructuring**: Public repo contains open-source engine; cloud dashboard, workstation integration, and homepage live in `elen-cloud/` within the `marketplace-repos` monorepo.
 - ✅ **Elen Lattice (ai-service)**: Node LLM gateway in `elen-cloud/ai-service/` — synthesis, constraints, scope-hint, chat, billing (proxied via Go `AI_SVC_URL`). Open-core packages do **not** include this service.
