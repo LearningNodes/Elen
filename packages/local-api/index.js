@@ -15,9 +15,9 @@
  *   node index.js
  *
  * Env vars:
- *   ELEN_DB        — path to decisions.db (default: ~/.elen/decisions.db)
- *   ELEN_API_PORT  — port to listen on   (default: 3333)
- *   ELEN_ORIGINS   — extra comma-separated allowed CORS origins
+ *   ELEN_DB              — path to decisions.db (default: ~/.elen/decisions.db)
+ *   ELEN_LOCAL_API_PORT  — port to listen on   (default: 3333; ELEN_API_PORT also accepted)
+ *   ELEN_ORIGINS         — extra comma-separated allowed CORS origins
  */
 
 const express = require('express');
@@ -27,13 +27,15 @@ const path = require('path');
 const fs = require('fs');
 const { homedir } = require('os');
 
-const PORT = parseInt(process.env.ELEN_API_PORT || '3333', 10);
+const PORT = parseInt(process.env.ELEN_LOCAL_API_PORT || process.env.ELEN_API_PORT || '3333', 10);
 const DB_PATH = process.env.ELEN_DB || path.join(homedir(), '.elen', 'decisions.db');
 
-// Allow the cloud dashboard + any local origin
+// Allow the cloud dashboard + workstation origins + any local origin
 const ALLOWED_ORIGINS = [
     'https://visualize.elen.app',
     'https://elen.learningnodes.com',
+    'https://workstation.learningnodes.com',
+    'https://workstation.dev.learningnodes.com',
     /^http:\/\/localhost(:\d+)?$/,
     /^http:\/\/127\.0\.0\.1(:\d+)?$/,
 ];
@@ -58,8 +60,10 @@ function openDb() {
 
 function parseRecord(row) {
     if (!row) return null;
-    if (row.record_json) {
-        try { return JSON.parse(row.record_json); } catch { /* fall through */ }
+    // Try payload_json first (current schema), then record_json (legacy schema)
+    const blob = row.payload_json || row.record_json;
+    if (blob) {
+        try { return JSON.parse(blob); } catch { /* fall through */ }
     }
     return {
         record_id: row.record_id,
@@ -203,7 +207,7 @@ app.get('/api/stats', (req, res) => {
             GROUP BY DATE(published_at) ORDER BY day ASC
         `).all(params);
 
-        const allRows = db.prepare(`SELECT record_json FROM records ${where}`).all(params);
+        const allRows = db.prepare(`SELECT payload_json, record_json FROM records ${where}`).all(params);
         let totalTokens = { input: 0, output: 0, total: 0 };
         for (const row of allRows) {
             const rec = parseRecord(row);
@@ -332,14 +336,14 @@ app.get('/api/usage', (req, res) => {
     if (!db) return res.json({ citations: [], stats: { totalCitations: 0, uniqueCited: 0, uncited: 0 } });
     try {
         const project = getProjectId(req);
-        let query = 'SELECT record_json FROM records';
+        let query = 'SELECT payload_json, record_json FROM records';
         const params = {};
         if (project) { query += ' WHERE project_id = @project'; params.project = project; }
         query += ' ORDER BY published_at ASC';
 
         const rows = db.prepare(query).all(params);
         db.close();
-        const records = rows.map(r => { try { return JSON.parse(r.record_json); } catch { return null; } }).filter(Boolean);
+        const records = rows.map(r => parseRecord(r)).filter(Boolean);
 
         const citationCount = {};
         const recordMeta = {};
@@ -431,12 +435,12 @@ app.get('/api/efficiency', (req, res) => {
         const totalRecords = db.prepare(`SELECT COUNT(*) AS count FROM records ${where}`).get(params);
         const totalSearches = db.prepare(`SELECT COUNT(*) AS count FROM search_log ${where}`).get(params);
 
-        const allRows = db.prepare(`SELECT record_json FROM records ${where}`).all(params);
+        const allRows = db.prepare(`SELECT payload_json, record_json FROM records ${where}`).all(params);
         let totalCitations = 0;
         for (const row of allRows) {
             try {
-                const rec = JSON.parse(row.record_json);
-                if (rec.linked_records?.length) totalCitations += rec.linked_records.length;
+                const rec = parseRecord(row);
+                if (rec?.linked_records?.length) totalCitations += rec.linked_records.length;
             } catch { }
         }
 
@@ -458,10 +462,10 @@ app.get('/api/efficiency', (req, res) => {
 
             const wRecords = db.prepare(`SELECT COUNT(*) AS count FROM records ${weekFilter}`).get(params);
             const wSearches = db.prepare(`SELECT COUNT(*) AS count FROM search_log ${searchFilter}`).get(params);
-            const wRows = db.prepare(`SELECT record_json FROM records ${weekFilter}`).all(params);
+            const wRows = db.prepare(`SELECT payload_json, record_json FROM records ${weekFilter}`).all(params);
             let wCitations = 0;
             for (const row of wRows) {
-                try { const rec = JSON.parse(row.record_json); if (rec.linked_records?.length) wCitations += rec.linked_records.length; } catch { }
+                try { const rec = parseRecord(row); if (rec?.linked_records?.length) wCitations += rec.linked_records.length; } catch { }
             }
 
             const weekCost = (wRecords.count * TOKENS_PER_RECORD) + (wSearches.count * TOKENS_PER_SEARCH);
@@ -477,7 +481,7 @@ app.get('/api/efficiency', (req, res) => {
         }
 
         const tenPct = Math.max(1, Math.floor(allRows.length * 0.1));
-        const countLinks = batch => batch.reduce((sum, row) => { try { const r = JSON.parse(row.record_json); return sum + (r.linked_records?.length || 0); } catch { return sum; } }, 0);
+        const countLinks = batch => batch.reduce((sum, row) => { try { const r = parseRecord(row); return sum + (r?.linked_records?.length || 0); } catch { return sum; } }, 0);
 
         db.close();
         res.json({
@@ -505,9 +509,9 @@ app.get('/api/skill-suggestions', (req, res) => {
         const where = project ? 'WHERE project_id = @project' : '';
         const params = project ? { project } : {};
 
-        const allRows = db.prepare(`SELECT record_json FROM records ${where}`).all(params);
+        const allRows = db.prepare(`SELECT payload_json, record_json FROM records ${where}`).all(params);
         db.close();
-        const records = allRows.map(row => { try { return JSON.parse(row.record_json); } catch { return null; } }).filter(Boolean);
+        const records = allRows.map(row => parseRecord(row)).filter(Boolean);
         const suggestions = [];
 
         // Signal 1: error resolution patterns
@@ -587,9 +591,17 @@ app.get('/api/skill-suggestions', (req, res) => {
 
 /* ── Start ─────────────────────────────────────────── */
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     const dbStatus = fs.existsSync(DB_PATH) ? '✓' : '✗ (not found yet)';
     console.log(`\n  ✦ Elen Local API running at http://localhost:${PORT}`);
     console.log(`  ✦ Reading from ${DB_PATH} ${dbStatus}`);
     console.log(`  ✦ Open visualize.elen.app to view your dashboard\n`);
+});
+
+server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        process.stderr.write(`[elen-local-api] Port ${PORT} already in use — another instance may be running.\n`);
+    } else {
+        process.stderr.write(`[elen-local-api] Server error: ${err.message}\n`);
+    }
 });
