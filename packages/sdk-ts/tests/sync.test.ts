@@ -319,6 +319,276 @@ describe('SyncEngine pull-merge into SQLite', () => {
 });
 
 // ---------------------------------------------------------------------------
+// SyncEngine.partitionChunks — chunk layout
+// ---------------------------------------------------------------------------
+describe('SyncEngine.partitionChunks', () => {
+  function makeRecord(id: string, csId: string): SyncPushItem {
+    return {
+      decision_id: id,
+      q_id: `q-${id}`,
+      question_text: null,
+      decision_text: 'D',
+      constraint_set_id: csId,
+      domain: 'test',
+      agent_id: 'a',
+      refs: [],
+      status: 'active',
+      supersedes_id: null,
+      timestamp: '2026-01-01T00:00:00.000Z',
+      content_hash: `hash-${id}`
+    };
+  }
+
+  function makeEngine(chunkSize: number): SyncEngine {
+    // cloud/local not used in partitionChunks — pass minimal stubs
+    return new SyncEngine({
+      cloud: {} as any,
+      local: {} as any,
+      pushChunkSize: chunkSize
+    });
+  }
+
+  it('returns empty array for empty input', () => {
+    const engine = makeEngine(20);
+    expect(engine.partitionChunks([])).toEqual([]);
+  });
+
+  it('single chunk when records <= chunkSize', () => {
+    const engine = makeEngine(20);
+    const records = Array.from({ length: 10 }, (_, i) => makeRecord(`d${i}`, 'cs:A'));
+    const chunks = engine.partitionChunks(records);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toHaveLength(10);
+  });
+
+  it('splits into multiple chunks when records > chunkSize', () => {
+    const engine = makeEngine(5);
+    // 12 records, all same constraint_set_id — should split 5/5/2
+    const records = Array.from({ length: 12 }, (_, i) => makeRecord(`d${i}`, 'cs:A'));
+    const chunks = engine.partitionChunks(records);
+    expect(chunks).toHaveLength(3);
+    expect(chunks[0]).toHaveLength(5);
+    expect(chunks[1]).toHaveLength(5);
+    expect(chunks[2]).toHaveLength(2);
+    // All records present
+    expect(chunks.flat()).toHaveLength(12);
+  });
+
+  it('keeps constraint_set cohesion — new cs starts new chunk when current is full', () => {
+    const engine = makeEngine(3);
+    // 3 records with cs:A (fills chunk 0), then 1 record with cs:B (new chunk)
+    const records = [
+      makeRecord('d0', 'cs:A'),
+      makeRecord('d1', 'cs:A'),
+      makeRecord('d2', 'cs:A'),
+      makeRecord('d3', 'cs:B')
+    ];
+    const chunks = engine.partitionChunks(records);
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0].every((r) => r.constraint_set_id === 'cs:A')).toBe(true);
+    expect(chunks[1][0].constraint_set_id).toBe('cs:B');
+  });
+
+  it('all records present across all chunks', () => {
+    const engine = makeEngine(4);
+    const records = [
+      ...Array.from({ length: 4 }, (_, i) => makeRecord(`a${i}`, 'cs:X')),
+      ...Array.from({ length: 4 }, (_, i) => makeRecord(`b${i}`, 'cs:Y')),
+      ...Array.from({ length: 3 }, (_, i) => makeRecord(`c${i}`, 'cs:Z'))
+    ];
+    const chunks = engine.partitionChunks(records);
+    const flat = chunks.flat();
+    expect(flat).toHaveLength(records.length);
+    expect(flat.map((r) => r.decision_id).sort()).toEqual(records.map((r) => r.decision_id).sort());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SyncEngine.push — multi-chunk aggregation (fetch stub)
+// ---------------------------------------------------------------------------
+describe('SyncEngine.push — chunked aggregation', () => {
+  let dbPath: string;
+  let local: SQLiteStorage;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    dbPath = join(tmpdir(), `elen-push-chunk-${Date.now()}.db`);
+    local = new SQLiteStorage(dbPath, 'proj');
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+    local.close();
+    rmSync(dbPath, { force: true });
+  });
+
+  async function seedRecords(count: number): Promise<void> {
+    for (let i = 0; i < count; i++) {
+      await local.saveRecord({
+        decision_id: `dec:CHUNK-${i}`,
+        q_id: `q-${i}`,
+        question_text: `Question ${i}`,
+        decision_text: `Decision ${i}`,
+        constraint_set_id: `cs:chunk${i}`,
+        refs: [],
+        status: 'active',
+        supersedes_id: null,
+        timestamp: new Date().toISOString(),
+        agent_id: 'test-agent',
+        domain: 'test'
+      });
+    }
+  }
+
+  it('sends multiple fetch calls when records exceed chunkSize', async () => {
+    // Seed 25 records; chunkSize=10 → 3 chunks
+    await seedRecords(25);
+
+    // Each chunk call returns a successful response
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { records: SyncPushItem[] };
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          ({
+            results: body.records.map((r) => ({ decision_id: r.decision_id, result: 'created' as const }))
+          }) satisfies SyncPushResponse
+      };
+    });
+
+    const cloud = new CloudMcpStorage({
+      apiUrl: 'http://localhost:3900',
+      agentId: 'test-agent',
+      apiKey: 'lnk_key'
+    });
+    const engine = new SyncEngine({ cloud, local, pushChunkSize: 10 });
+    const response = await engine.push();
+
+    // 3 fetch calls (chunks of 10/10/5)
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    // All 25 results aggregated
+    expect(response.results).toHaveLength(25);
+    expect(response.results.every((r) => r.result === 'created')).toBe(true);
+  });
+
+  it('aggregates pushed/duplicates/rejected across chunks', async () => {
+    await seedRecords(6);
+
+    // chunk 1 (records 0-2): 1 created, 1 duplicate, 1 error
+    // chunk 2 (records 3-5): 2 created, 1 duplicate
+    let callCount = 0;
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { records: SyncPushItem[] };
+      callCount++;
+      if (callCount === 1) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            ({
+              results: [
+                { decision_id: body.records[0].decision_id, result: 'created' as const },
+                { decision_id: body.records[1].decision_id, result: 'duplicate' as const },
+                { decision_id: body.records[2].decision_id, result: 'error' as const, message: 'bad' }
+              ]
+            }) satisfies SyncPushResponse
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          ({
+            results: [
+              { decision_id: body.records[0].decision_id, result: 'created' as const },
+              { decision_id: body.records[1].decision_id, result: 'created' as const },
+              { decision_id: body.records[2].decision_id, result: 'duplicate' as const }
+            ]
+          }) satisfies SyncPushResponse
+      };
+    });
+
+    const cloud = new CloudMcpStorage({
+      apiUrl: 'http://localhost:3900',
+      agentId: 'test-agent',
+      apiKey: 'lnk_key'
+    });
+    const engine = new SyncEngine({ cloud, local, pushChunkSize: 3 });
+    const response = await engine.push();
+
+    expect(response.results).toHaveLength(6);
+    expect(response.results.filter((r) => r.result === 'created')).toHaveLength(3);
+    expect(response.results.filter((r) => r.result === 'duplicate')).toHaveLength(2);
+    expect(response.results.filter((r) => r.result === 'error')).toHaveLength(1);
+  });
+
+  it('surfaces partial progress on mid-chunk HTTP failure', async () => {
+    await seedRecords(9);
+
+    let callCount = 0;
+    fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
+      callCount++;
+      if (callCount === 1) {
+        // First chunk succeeds (3 records created)
+        const body = JSON.parse(String(init.body)) as { records: SyncPushItem[] };
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            ({
+              results: body.records.map((r) => ({ decision_id: r.decision_id, result: 'created' as const }))
+            }) satisfies SyncPushResponse
+        };
+      }
+      // Second chunk returns 413
+      return {
+        ok: false,
+        status: 413,
+        text: async () => 'Request body too large'
+      };
+    });
+
+    const cloud = new CloudMcpStorage({
+      apiUrl: 'http://localhost:3900',
+      agentId: 'test-agent',
+      apiKey: 'lnk_key'
+    });
+    const engine = new SyncEngine({ cloud, local, pushChunkSize: 3 });
+
+    // Capture the single push() call's error and assert all properties on it
+    let caughtError: Error | undefined;
+    try {
+      await engine.push();
+    } catch (err) {
+      caughtError = err as Error;
+    }
+
+    expect(caughtError).toBeDefined();
+    expect(caughtError!.message).toMatch(/chunk 2\/3/);
+    expect(caughtError!.message).toMatch(/3 record\(s\) already accepted/);
+    expect(caughtError!.message).toMatch(/idempotent/);
+    expect(caughtError!.message).toMatch(/413/);
+  });
+
+  it('returns empty results when no local records exist', async () => {
+    // No seeded records
+    const cloud = new CloudMcpStorage({
+      apiUrl: 'http://localhost:3900',
+      agentId: 'test-agent',
+      apiKey: 'lnk_key'
+    });
+    const engine = new SyncEngine({ cloud, local, pushChunkSize: 20 });
+    const response = await engine.push();
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(response.results).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // listLocalRecordsForPush — local records have content_hash computed
 // ---------------------------------------------------------------------------
 describe('SQLiteStorage.listLocalRecordsForPush', () => {

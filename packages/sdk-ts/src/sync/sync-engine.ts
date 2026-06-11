@@ -1,12 +1,21 @@
 import type { CloudMcpStorage } from '../storage/cloud-mcp';
 import type { SQLiteStorage } from '../storage/sqlite';
-import type { SyncPushItem, SyncPushResponse, SyncPullResponse } from '../types';
+import type { SyncPushItem, SyncPushResponse, SyncPullResponse, SyncPushResultItem } from '../types';
 
 export interface SyncEngineOptions {
   cloud: CloudMcpStorage;
   local: SQLiteStorage;
   /** Pull page size. Default 100. */
   pullLimit?: number;
+  /**
+   * Maximum number of records per push chunk. Default 20.
+   *
+   * Constraint sets referenced by records in a chunk travel in the same chunk
+   * or an earlier one — the chunker keeps records with the same constraint_set_id
+   * together unless the chunk is already at capacity, in which case the new
+   * constraint_set_id starts the next chunk.
+   */
+  pushChunkSize?: number;
 }
 
 /**
@@ -25,11 +34,13 @@ export class SyncEngine {
   private readonly cloud: CloudMcpStorage;
   private readonly local: SQLiteStorage;
   private readonly pullLimit: number;
+  private readonly pushChunkSize: number;
 
   constructor(opts: SyncEngineOptions) {
     this.cloud = opts.cloud;
     this.local = opts.local;
     this.pullLimit = opts.pullLimit ?? 100;
+    this.pushChunkSize = opts.pushChunkSize ?? 20;
   }
 
   /**
@@ -38,6 +49,57 @@ export class SyncEngine {
    */
   async buildPushBatch(): Promise<SyncPushItem[]> {
     return this.local.listLocalRecordsForPush();
+  }
+
+  /**
+   * Partition records into chunks of at most `pushChunkSize`.
+   *
+   * Constraint-set cohesion rule: all records sharing a constraint_set_id must
+   * travel in the same chunk or an earlier one.  The algorithm walks records in
+   * order and tracks which constraint_set_ids have already been opened.  If the
+   * current record's constraint_set_id is new AND the current chunk is full, it
+   * forces a new chunk boundary.  If the constraint_set_id is already in an
+   * earlier chunk, that chunk has already been (or will be) sent before this
+   * one, so the record can join the current chunk regardless.
+   */
+  partitionChunks(records: SyncPushItem[]): SyncPushItem[][] {
+    if (records.length === 0) return [];
+
+    const chunks: SyncPushItem[][] = [];
+    let current: SyncPushItem[] = [];
+    // Maps constraint_set_id → chunk index where it was first seen
+    const csChunkIndex = new Map<string, number>();
+
+    for (const record of records) {
+      const csId = record.constraint_set_id;
+      const seenInChunk = csChunkIndex.get(csId);
+      const currentChunkIndex = chunks.length;
+
+      if (seenInChunk === undefined) {
+        // New constraint_set_id: start a new chunk if current is full
+        if (current.length >= this.pushChunkSize) {
+          chunks.push(current);
+          current = [];
+        }
+        csChunkIndex.set(csId, chunks.length);
+      }
+      // If seenInChunk is defined (earlier chunk) the record can join current chunk freely;
+      // if it equals chunks.length (same chunk) that's also fine — no boundary needed.
+
+      // Check if simply adding to current would overflow (irrespective of cs cohesion)
+      if (current.length >= this.pushChunkSize) {
+        chunks.push(current);
+        current = [];
+      }
+
+      current.push(record);
+    }
+
+    if (current.length > 0) {
+      chunks.push(current);
+    }
+
+    return chunks;
   }
 
   /**
@@ -77,17 +139,47 @@ export class SyncEngine {
   }
 
   /**
-   * Push local records to the cloud.
-   * Idempotent via content_hash — server returns 'duplicate' for already-synced rows.
+   * Push local records to the cloud in chunks of at most `pushChunkSize`.
    *
-   * Returns the raw push response.
+   * Each chunk is sent as a separate POST /elen/sync/push request, keeping
+   * individual request bodies below the server's body-size limit (100 kB).
+   *
+   * On HTTP failure the push stops immediately.  The error message includes
+   * which chunk failed and how many records were already accepted, so the
+   * caller can surface partial progress.  Re-running is safe: content-hash
+   * dedup on the server means accepted records will come back as 'duplicate'.
+   *
+   * Returns an aggregated {results} across all chunks.
    */
   async push(): Promise<SyncPushResponse> {
     const records = await this.buildPushBatch();
     if (records.length === 0) {
       return { results: [] };
     }
-    return this.cloud.pushBatch({ records });
+
+    const chunks = this.partitionChunks(records);
+    const allResults: SyncPushResultItem[] = [];
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      let chunkResponse: SyncPushResponse;
+
+      try {
+        chunkResponse = await this.cloud.pushBatch({ records: chunk });
+      } catch (err) {
+        const alreadyAccepted = allResults.filter((r) => r.result === 'created' || r.result === 'duplicate').length;
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(
+          `Push failed on chunk ${i + 1}/${chunks.length} (records ${allResults.length + 1}–${allResults.length + chunk.length} of ${records.length}). ` +
+            `${alreadyAccepted} record(s) already accepted — re-running is safe (content-hash dedup makes it idempotent). ` +
+            `Underlying error: ${msg}`
+        );
+      }
+
+      allResults.push(...chunkResponse.results);
+    }
+
+    return { results: allResults };
   }
 
   /**
