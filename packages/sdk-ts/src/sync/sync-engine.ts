@@ -117,7 +117,7 @@ export class SyncEngine {
       const page: SyncPullResponse = await this.cloud.pullSince(cursor, this.pullLimit);
       pages += 1;
 
-      for (const item of page.records) {
+      for (const item of page.rows) {
         await this.local.upsertCloudRecord(item);
         upserted += 1;
       }
@@ -127,7 +127,8 @@ export class SyncEngine {
         await this.local.setSyncCursor(cursor);
       }
 
-      if (!page.has_more) break;
+      // Server returns next_cursor=null when there are no more pages
+      if (!page.next_cursor) break;
     }
 
     // Persist final cursor even if has_more=false (server may advance it)
@@ -165,9 +166,9 @@ export class SyncEngine {
       let chunkResponse: SyncPushResponse;
 
       try {
-        chunkResponse = await this.cloud.pushBatch({ records: chunk });
+        chunkResponse = await this.cloud.pushBatch({ items: chunk });
       } catch (err) {
-        const alreadyAccepted = allResults.filter((r) => r.result === 'created' || r.result === 'duplicate').length;
+        const alreadyAccepted = allResults.filter((r) => r.status === 'created' || r.status === 'duplicate').length;
         const msg = err instanceof Error ? err.message : String(err);
         throw new Error(
           `Push failed on chunk ${i + 1}/${chunks.length} (records ${allResults.length + 1}–${allResults.length + chunk.length} of ${records.length}). ` +

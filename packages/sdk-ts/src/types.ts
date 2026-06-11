@@ -30,38 +30,37 @@ export interface ElenConfig {
 
 /* ── Sync wire types (DS-0 §6.4) ──────────────────────────────────── */
 
-/** Single record payload sent in a push batch. */
+/** Single record payload sent in a push batch (matches server sync.js pushBatch item shape). */
 export interface SyncPushItem {
   decision_id: string;
   q_id: string;
   question_text?: string | null;
   decision_text: string;
   constraint_set_id: string;
+  /** Flat string array of constraint atoms — server upserts into mcp_constraint_sets. */
+  constraints?: string[];
   domain: string;
   agent_id: string;
   refs: string[];
   status: string;
+  /** 'withdraw' op triggers tombstone path on server. */
+  op?: string;
   supersedes_id?: string | null;
   timestamp: string;
   content_hash: string;
-  /** Full constraint set atoms — server upserts into mcp_constraint_sets. */
-  constraint_set?: {
-    constraint_set_id: string;
-    atoms: string[];
-    summary: string;
-  };
 }
 
-/** POST /elen/sync/push request body. */
+/** POST /elen/sync/push request body — server reads req.body.items. */
 export interface SyncPushRequest {
-  records: SyncPushItem[];
+  items: SyncPushItem[];
 }
 
-/** Per-record outcome in push response. */
+/** Per-record outcome in push response — server field is `status`, not `result`. */
 export interface SyncPushResultItem {
   decision_id: string;
-  result: 'created' | 'duplicate' | 'error';
-  message?: string;
+  /** Server values: 'created' | 'duplicate' | 'withdrawn' | 'error' */
+  status: 'created' | 'duplicate' | 'withdrawn' | 'error';
+  error?: string;
 }
 
 /** POST /elen/sync/push response body. */
@@ -69,11 +68,10 @@ export interface SyncPushResponse {
   results: SyncPushResultItem[];
 }
 
-/** GET /elen/sync/pull response body. */
+/** GET /elen/sync/pull response body — server field is `rows`, not `records`. No `has_more`. */
 export interface SyncPullResponse {
-  records: SyncPushItem[];
+  rows: SyncPushItem[];
   next_cursor: string | null;
-  has_more: boolean;
 }
 
 export interface CommitDecisionInput {

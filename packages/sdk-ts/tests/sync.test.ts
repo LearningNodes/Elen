@@ -122,7 +122,8 @@ describe('CloudMcpStorage.pushBatch — wire shape', () => {
     fetchMock.mockResolvedValue({
       ok: true,
       status: 200,
-      json: async () => ({ results: [{ decision_id: 'dec:X', result: 'created' }] } satisfies SyncPushResponse)
+      // Server returns per-item `status` field (not `result`)
+      json: async () => ({ results: [{ decision_id: 'dec:X', status: 'created' }] } satisfies SyncPushResponse)
     });
   });
 
@@ -154,7 +155,8 @@ describe('CloudMcpStorage.pushBatch — wire shape', () => {
       content_hash: 'abc123'
     };
 
-    const resp = await storage.pushBatch({ records: [item] });
+    // Server reads req.body.items — SyncPushRequest field is `items`
+    const resp = await storage.pushBatch({ items: [item] });
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -167,12 +169,15 @@ describe('CloudMcpStorage.pushBatch — wire shape', () => {
     // X-User-Email must NOT be sent on sync routes (key-only auth)
     expect(headers['X-User-Email']).toBeUndefined();
 
+    // Server reads req.body.items — body must have `items`, not `records`
     const body = JSON.parse(String(init.body));
-    expect(body.records).toHaveLength(1);
-    expect(body.records[0].decision_id).toBe('dec:INFAT3-abc');
-    expect(body.records[0].content_hash).toBe('abc123');
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0].decision_id).toBe('dec:INFAT3-abc');
+    expect(body.items[0].content_hash).toBe('abc123');
+    expect(body.records).toBeUndefined();
 
-    expect(resp.results[0].result).toBe('created');
+    // Server per-item response field is `status`, not `result`
+    expect(resp.results[0].status).toBe('created');
   });
 
   it('throws on non-2xx with body text', async () => {
@@ -188,7 +193,7 @@ describe('CloudMcpStorage.pushBatch — wire shape', () => {
       apiKey: 'lnk_bad'
     });
 
-    await expect(storage.pushBatch({ records: [] })).rejects.toThrow('Sync push failed (401): invalid api key');
+    await expect(storage.pushBatch({ items: [] })).rejects.toThrow('Sync push failed (401): invalid api key');
   });
 });
 
@@ -213,8 +218,9 @@ describe('SyncEngine pull-merge into SQLite', () => {
     rmSync(dbPath, { force: true });
   });
 
+  // Server returns `rows` (not `records`) and has no `has_more` field
   function makePullResponse(items: SyncPushItem[], nextCursor: string | null = null): SyncPullResponse {
-    return { records: items, next_cursor: nextCursor, has_more: false };
+    return { rows: items, next_cursor: nextCursor };
   }
 
   it('pulled cloud records are readable via searchRecords', async () => {
@@ -265,10 +271,18 @@ describe('SyncEngine pull-merge into SQLite', () => {
   });
 
   it('cursor is persisted in sync_state after pull', async () => {
+    // Page 1: returns a cursor, triggering a second fetch
     fetchMock.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ({ records: [], next_cursor: 'cursor-abc', has_more: false } satisfies SyncPullResponse)
+      // Server returns `rows` (not `records`), no `has_more` field
+      json: async () => ({ rows: [], next_cursor: 'cursor-abc' } satisfies SyncPullResponse)
+    });
+    // Page 2: next_cursor=null signals end-of-stream
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ rows: [], next_cursor: null } satisfies SyncPullResponse)
     });
 
     const cloud = new CloudMcpStorage({
@@ -447,14 +461,15 @@ describe('SyncEngine.push — chunked aggregation', () => {
     await seedRecords(25);
 
     // Each chunk call returns a successful response
+    // Server body field is `items`; server per-item response field is `status`
     fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)) as { records: SyncPushItem[] };
+      const body = JSON.parse(String(init.body)) as { items: SyncPushItem[] };
       return {
         ok: true,
         status: 200,
         json: async () =>
           ({
-            results: body.records.map((r) => ({ decision_id: r.decision_id, result: 'created' as const }))
+            results: body.items.map((r) => ({ decision_id: r.decision_id, status: 'created' as const }))
           }) satisfies SyncPushResponse
       };
     });
@@ -471,7 +486,7 @@ describe('SyncEngine.push — chunked aggregation', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
     // All 25 results aggregated
     expect(response.results).toHaveLength(25);
-    expect(response.results.every((r) => r.result === 'created')).toBe(true);
+    expect(response.results.every((r) => r.status === 'created')).toBe(true);
   });
 
   it('aggregates pushed/duplicates/rejected across chunks', async () => {
@@ -479,9 +494,10 @@ describe('SyncEngine.push — chunked aggregation', () => {
 
     // chunk 1 (records 0-2): 1 created, 1 duplicate, 1 error
     // chunk 2 (records 3-5): 2 created, 1 duplicate
+    // Server body field is `items`; server per-item response field is `status`
     let callCount = 0;
     fetchMock.mockImplementation(async (_url: string, init: RequestInit) => {
-      const body = JSON.parse(String(init.body)) as { records: SyncPushItem[] };
+      const body = JSON.parse(String(init.body)) as { items: SyncPushItem[] };
       callCount++;
       if (callCount === 1) {
         return {
@@ -490,9 +506,9 @@ describe('SyncEngine.push — chunked aggregation', () => {
           json: async () =>
             ({
               results: [
-                { decision_id: body.records[0].decision_id, result: 'created' as const },
-                { decision_id: body.records[1].decision_id, result: 'duplicate' as const },
-                { decision_id: body.records[2].decision_id, result: 'error' as const, message: 'bad' }
+                { decision_id: body.items[0].decision_id, status: 'created' as const },
+                { decision_id: body.items[1].decision_id, status: 'duplicate' as const },
+                { decision_id: body.items[2].decision_id, status: 'error' as const, error: 'bad' }
               ]
             }) satisfies SyncPushResponse
         };
@@ -503,9 +519,9 @@ describe('SyncEngine.push — chunked aggregation', () => {
         json: async () =>
           ({
             results: [
-              { decision_id: body.records[0].decision_id, result: 'created' as const },
-              { decision_id: body.records[1].decision_id, result: 'created' as const },
-              { decision_id: body.records[2].decision_id, result: 'duplicate' as const }
+              { decision_id: body.items[0].decision_id, status: 'created' as const },
+              { decision_id: body.items[1].decision_id, status: 'created' as const },
+              { decision_id: body.items[2].decision_id, status: 'duplicate' as const }
             ]
           }) satisfies SyncPushResponse
       };
@@ -520,9 +536,9 @@ describe('SyncEngine.push — chunked aggregation', () => {
     const response = await engine.push();
 
     expect(response.results).toHaveLength(6);
-    expect(response.results.filter((r) => r.result === 'created')).toHaveLength(3);
-    expect(response.results.filter((r) => r.result === 'duplicate')).toHaveLength(2);
-    expect(response.results.filter((r) => r.result === 'error')).toHaveLength(1);
+    expect(response.results.filter((r) => r.status === 'created')).toHaveLength(3);
+    expect(response.results.filter((r) => r.status === 'duplicate')).toHaveLength(2);
+    expect(response.results.filter((r) => r.status === 'error')).toHaveLength(1);
   });
 
   it('surfaces partial progress on mid-chunk HTTP failure', async () => {
@@ -533,13 +549,14 @@ describe('SyncEngine.push — chunked aggregation', () => {
       callCount++;
       if (callCount === 1) {
         // First chunk succeeds (3 records created)
-        const body = JSON.parse(String(init.body)) as { records: SyncPushItem[] };
+        // Server body field is `items`; server per-item response field is `status`
+        const body = JSON.parse(String(init.body)) as { items: SyncPushItem[] };
         return {
           ok: true,
           status: 200,
           json: async () =>
             ({
-              results: body.records.map((r) => ({ decision_id: r.decision_id, result: 'created' as const }))
+              results: body.items.map((r) => ({ decision_id: r.decision_id, status: 'created' as const }))
             }) satisfies SyncPushResponse
         };
       }

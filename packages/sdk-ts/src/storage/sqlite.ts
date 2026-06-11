@@ -456,11 +456,12 @@ export class SQLiteStorage implements StorageAdapter {
       // Status-only update (tombstone + superseded are the only valid transitions)
       this.db.prepare('UPDATE records SET status = ? WHERE decision_id = ?').run(item.status, item.decision_id);
     } else {
-      // Fresh cloud record — upsert constraint_set first if provided
-      if (item.constraint_set) {
+      // Fresh cloud record — upsert constraint set from flat constraints[] array if provided
+      if (Array.isArray(item.constraints) && item.constraints.length > 0) {
+        const summary = item.constraints.join('; ');
         this.db.prepare(
           'INSERT OR IGNORE INTO constraint_sets(constraint_set_id, atoms, summary) VALUES (?,?,?)'
-        ).run(item.constraint_set.constraint_set_id, JSON.stringify(item.constraint_set.atoms), item.constraint_set.summary);
+        ).run(item.constraint_set_id, JSON.stringify(item.constraints), summary);
       }
 
       const recordId = item.decision_id;
@@ -546,12 +547,15 @@ export class SQLiteStorage implements StorageAdapter {
         agent_id: r.agent_id,
         refs
       });
+      // constraints: flat string[] the server reads as item.constraints for mcp_constraint_sets upsert
+      const constraints: string[] = r.cs_atoms ? JSON.parse(r.cs_atoms) : [];
       const item: SyncPushItem = {
         decision_id: r.decision_id,
         q_id: r.q_id,
         question_text: r.question_text,
         decision_text: r.decision_text,
         constraint_set_id: r.constraint_set_id,
+        constraints,
         domain: r.domain,
         agent_id: r.agent_id,
         refs,
@@ -560,13 +564,6 @@ export class SQLiteStorage implements StorageAdapter {
         timestamp: r.timestamp,
         content_hash: contentHash
       };
-      if (r.cs_atoms && r.cs_summary) {
-        item.constraint_set = {
-          constraint_set_id: r.constraint_set_id,
-          atoms: JSON.parse(r.cs_atoms),
-          summary: r.cs_summary
-        };
-      }
       return item;
     });
   }

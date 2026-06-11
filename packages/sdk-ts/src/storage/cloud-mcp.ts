@@ -61,6 +61,7 @@ export class CloudMcpStorage implements StorageAdapter {
 
   /**
    * POST /elen/sync/push — send a batch of local records to the cloud.
+   * Server reads req.body.items — the SyncPushRequest type uses field `items`.
    * Throws on non-2xx with body text (matches existing error style).
    *
    * BLOCKER (DS-0 plan notes #1): gateway /elen/sync/* must use Bearer lnk_ auth,

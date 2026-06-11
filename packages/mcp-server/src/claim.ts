@@ -158,9 +158,9 @@ export async function runClaim(opts: ClaimOptions): Promise<void> {
   local.close();
 
   const results: SyncPushResultItem[] = pushResponse.results;
-  const pushed = results.filter((r) => r.result === 'created').length;
-  const duplicates = results.filter((r) => r.result === 'duplicate').length;
-  const rejected = results.filter((r) => r.result === 'error').length;
+  const pushed = results.filter((r) => r.status === 'created').length;
+  const duplicates = results.filter((r) => r.status === 'duplicate').length;
+  const rejected = results.filter((r) => r.status === 'error').length;
 
   process.stdout.write('\n');
   process.stdout.write('Claim complete.\n');
