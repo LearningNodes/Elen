@@ -12,10 +12,68 @@ export interface ElenConfig {
   storage?: 'memory' | 'sqlite' | 'cloud';
   sqlitePath?: string;
   apiUrl?: string;
+  /**
+   * Primary auth credential for cloud sync (Bearer lnk_ key from /settings/api-keys).
+   * Also accepted as ELEN_API_KEY or ELEN_CLOUD_API_KEY env var.
+   */
   apiKey?: string;
-  /** Required when storage is 'cloud' — LN identity for X-User-Email attribution. */
+  /** Alias for apiUrl — accepted for forward-compat. */
+  cloudBaseUrl?: string;
+  /**
+   * LN identity email for X-User-Email header.
+   * Optional / legacy — used only for /elen/mcp/commit attribution.
+   * Cloud sync routes authenticate via apiKey (Bearer lnk_) only.
+   */
   userEmail?: string;
   defaultProjectIsolation?: 'strict' | 'open';
+}
+
+/* ── Sync wire types (DS-0 §6.4) ──────────────────────────────────── */
+
+/** Single record payload sent in a push batch. */
+export interface SyncPushItem {
+  decision_id: string;
+  q_id: string;
+  question_text?: string | null;
+  decision_text: string;
+  constraint_set_id: string;
+  domain: string;
+  agent_id: string;
+  refs: string[];
+  status: string;
+  supersedes_id?: string | null;
+  timestamp: string;
+  content_hash: string;
+  /** Full constraint set atoms — server upserts into mcp_constraint_sets. */
+  constraint_set?: {
+    constraint_set_id: string;
+    atoms: string[];
+    summary: string;
+  };
+}
+
+/** POST /elen/sync/push request body. */
+export interface SyncPushRequest {
+  records: SyncPushItem[];
+}
+
+/** Per-record outcome in push response. */
+export interface SyncPushResultItem {
+  decision_id: string;
+  result: 'created' | 'duplicate' | 'error';
+  message?: string;
+}
+
+/** POST /elen/sync/push response body. */
+export interface SyncPushResponse {
+  results: SyncPushResultItem[];
+}
+
+/** GET /elen/sync/pull response body. */
+export interface SyncPullResponse {
+  records: SyncPushItem[];
+  next_cursor: string | null;
+  has_more: boolean;
 }
 
 export interface CommitDecisionInput {

@@ -4,8 +4,7 @@ import { backupDatabase, exportDatabase, importDatabase, type ExportBundle } fro
 import { buildGraphMeta } from '../graph-meta';
 import { cosineSimilarity } from '../similarity';
 import { openSqliteDatabase } from '../sqlite-open';
-import type { GraphMeta, GraphStats } from '../types';
-import type { SearchOptions } from '../types';
+import type { GraphMeta, GraphStats, SearchOptions, SyncPushItem } from '../types';
 import type { StorageAdapter } from './interface';
 
 export class SQLiteStorage implements StorageAdapter {
@@ -158,18 +157,26 @@ export class SQLiteStorage implements StorageAdapter {
       }));
   }
 
+  // Target schema version tracked via PRAGMA user_version.
+  // 0 = pre-versioning (old DBs); 2 = current (payload_json + source columns present).
+  private static readonly SCHEMA_VERSION = 2;
+
   private init() {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS constraint_sets (constraint_set_id TEXT PRIMARY KEY, atoms TEXT NOT NULL, summary TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS decisions (decision_id TEXT PRIMARY KEY, decision_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS search_log (search_id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT NOT NULL, domain TEXT, project_id TEXT NOT NULL, hits INTEGER NOT NULL DEFAULT 0, cross_project_hits INTEGER NOT NULL DEFAULT 0, searched_at TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
+
+    // Read the current schema version
+    const userVersion = ((this.db as any).pragma('user_version', { simple: true }) as number) ?? 0;
 
     // Check if records table exists and what schema it has
     const tableExists = this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='records'").get();
 
     if (!tableExists) {
-      // Fresh DB: create spec-compliant table
+      // Fresh DB: create spec-compliant table including source column for sync
       this.db.exec(`
         CREATE TABLE records (
           record_id         TEXT PRIMARY KEY,
@@ -185,13 +192,21 @@ export class SQLiteStorage implements StorageAdapter {
           status            TEXT NOT NULL DEFAULT 'active',
           supersedes_id     TEXT,
           timestamp         TEXT NOT NULL,
-          payload_json      TEXT
+          payload_json      TEXT,
+          source            TEXT NOT NULL DEFAULT 'local'
         );
       `);
+      // Set schema version directly on fresh DB
+      (this.db as any).pragma(`user_version = ${SQLiteStorage.SCHEMA_VERSION}`);
       return;
     }
 
-    // Table exists — check if it needs migration
+    // Table exists — if version is already current, skip migration checks
+    if (userVersion >= SQLiteStorage.SCHEMA_VERSION) {
+      return;
+    }
+
+    // user_version = 0: old DB — run column-sniff migration path
     const cols = (this.db as any).pragma('table_info(records)') as Array<{ name: string }>;
     const colNames = new Set(cols.map(c => c.name));
 
@@ -217,7 +232,8 @@ export class SQLiteStorage implements StorageAdapter {
             status            TEXT NOT NULL DEFAULT 'active',
             supersedes_id     TEXT,
             timestamp         TEXT NOT NULL,
-            payload_json      TEXT
+            payload_json      TEXT,
+            source            TEXT NOT NULL DEFAULT 'local'
           );
         `);
 
@@ -250,6 +266,16 @@ export class SQLiteStorage implements StorageAdapter {
       // Partial migration: just add missing columns
       this.db.exec('ALTER TABLE records ADD COLUMN question_text TEXT');
     }
+
+    // Additive: source column for sync (column-sniff only — never triggers rebuild)
+    const colsAfter = (this.db as any).pragma('table_info(records)') as Array<{ name: string }>;
+    const colNamesAfter = new Set(colsAfter.map((c: { name: string }) => c.name));
+    if (!colNamesAfter.has('source')) {
+      this.db.exec("ALTER TABLE records ADD COLUMN source TEXT NOT NULL DEFAULT 'local'");
+    }
+
+    // Mark schema version after all migrations complete
+    (this.db as any).pragma(`user_version = ${SQLiteStorage.SCHEMA_VERSION}`);
   }
 
 
@@ -404,5 +430,144 @@ export class SQLiteStorage implements StorageAdapter {
       0,
       new Date().toISOString()
     ]);
+  }
+
+  /* ── Sync surface (DS-0 §6) ─────────────────────────────────────── */
+
+  async getSyncCursor(): Promise<string | null> {
+    const row = this.db.prepare('SELECT value FROM sync_state WHERE key = ?').get('pull_cursor') as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  async setSyncCursor(cursor: string): Promise<void> {
+    this.db.prepare('INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, ?)').run('pull_cursor', cursor);
+  }
+
+  /**
+   * Upsert a record pulled from the cloud.
+   * - Sets source='cloud' on insert.
+   * - On conflict by decision_id: applies status-only update (tombstone / superseded).
+   *   Never overwrites decision_text to preserve append-only semantics.
+   */
+  async upsertCloudRecord(item: SyncPushItem): Promise<void> {
+    const existing = this.db.prepare('SELECT record_id, status FROM records WHERE decision_id = ?').get(item.decision_id) as { record_id: string; status: string } | undefined;
+
+    if (existing) {
+      // Status-only update (tombstone + superseded are the only valid transitions)
+      this.db.prepare('UPDATE records SET status = ? WHERE decision_id = ?').run(item.status, item.decision_id);
+    } else {
+      // Fresh cloud record — upsert constraint_set first if provided
+      if (item.constraint_set) {
+        this.db.prepare(
+          'INSERT OR IGNORE INTO constraint_sets(constraint_set_id, atoms, summary) VALUES (?,?,?)'
+        ).run(item.constraint_set.constraint_set_id, JSON.stringify(item.constraint_set.atoms), item.constraint_set.summary);
+      }
+
+      const recordId = item.decision_id;
+      const payloadJson: Record<string, unknown> = {
+        decision_id: item.decision_id,
+        q_id: item.q_id,
+        agent_id: item.agent_id,
+        domain: item.domain,
+        question_text: item.question_text ?? null,
+        decision_text: item.decision_text,
+        constraint_set_id: item.constraint_set_id,
+        refs: item.refs,
+        status: item.status,
+        supersedes_id: item.supersedes_id ?? null,
+        timestamp: item.timestamp
+      };
+
+      this.db.prepare(`
+        INSERT OR REPLACE INTO records(
+          record_id, decision_id, q_id, agent_id, domain, project_id,
+          question_text, decision_text, constraint_set_id,
+          refs, status, supersedes_id, timestamp, payload_json, source
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run([
+        recordId,
+        item.decision_id,
+        item.q_id,
+        item.agent_id,
+        item.domain,
+        this.projectId,
+        item.question_text ?? null,
+        item.decision_text,
+        item.constraint_set_id,
+        JSON.stringify(item.refs),
+        item.status,
+        item.supersedes_id ?? null,
+        item.timestamp,
+        JSON.stringify(payloadJson),
+        'cloud'
+      ]);
+    }
+  }
+
+  /**
+   * Return local (source='local') records joined with their constraint sets,
+   * ready to be batched into a push request.
+   */
+  async listLocalRecordsForPush(): Promise<SyncPushItem[]> {
+    const rows = this.db.prepare(
+      `SELECT r.decision_id, r.q_id, r.agent_id, r.domain, r.question_text,
+              r.decision_text, r.constraint_set_id, r.refs, r.status,
+              r.supersedes_id, r.timestamp,
+              cs.atoms AS cs_atoms, cs.summary AS cs_summary
+       FROM records r
+       LEFT JOIN constraint_sets cs ON cs.constraint_set_id = r.constraint_set_id
+       WHERE r.source = 'local'`
+    ).all() as Array<{
+      decision_id: string;
+      q_id: string;
+      agent_id: string;
+      domain: string;
+      question_text: string | null;
+      decision_text: string;
+      constraint_set_id: string;
+      refs: string;
+      status: string;
+      supersedes_id: string | null;
+      timestamp: string;
+      cs_atoms: string | null;
+      cs_summary: string | null;
+    }>;
+
+    // Import here to avoid circular at module level (content-hash is a sibling module)
+    const { computeContentHash } = await import('../sync/content-hash');
+
+    return rows.map((r) => {
+      const refs: string[] = r.refs ? JSON.parse(r.refs) : [];
+      const contentHash = computeContentHash({
+        question_text: r.question_text,
+        decision_text: r.decision_text,
+        constraint_set_id: r.constraint_set_id,
+        domain: r.domain,
+        agent_id: r.agent_id,
+        refs
+      });
+      const item: SyncPushItem = {
+        decision_id: r.decision_id,
+        q_id: r.q_id,
+        question_text: r.question_text,
+        decision_text: r.decision_text,
+        constraint_set_id: r.constraint_set_id,
+        domain: r.domain,
+        agent_id: r.agent_id,
+        refs,
+        status: r.status,
+        supersedes_id: r.supersedes_id,
+        timestamp: r.timestamp,
+        content_hash: contentHash
+      };
+      if (r.cs_atoms && r.cs_summary) {
+        item.constraint_set = {
+          constraint_set_id: r.constraint_set_id,
+          atoms: JSON.parse(r.cs_atoms),
+          summary: r.cs_summary
+        };
+      }
+      return item;
+    });
   }
 }
