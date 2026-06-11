@@ -4,6 +4,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { resolveProjectId, ProjectResolveError } from '@learningnodes/elen';
 import { Elen } from '@learningnodes/elen';
 import { defaultStoragePath } from './server';
+import { runClaim } from './claim';
 
 const requireConsolidator = createRequire(__filename);
 
@@ -107,9 +108,27 @@ export async function runCliCommand(argv: string[], globals: CliGlobalOptions): 
       process.stdout.write(JSON.stringify(stats, null, 2) + '\n');
       return;
     }
+    case 'claim': {
+      const cloudUrl = process.env.ELEN_CLOUD_URL;
+      const apiKey = process.env.ELEN_API_KEY ?? process.env.ELEN_CLOUD_API_KEY;
+      if (!cloudUrl) {
+        throw new Error('claim requires ELEN_CLOUD_URL to be set');
+      }
+      if (!apiKey) {
+        throw new Error('claim requires ELEN_API_KEY (or ELEN_CLOUD_API_KEY) to be set');
+      }
+      await runClaim({
+        projectId: globals.projectId,
+        storagePath: globals.storagePath,
+        cloudUrl,
+        apiKey,
+        agentId: globals.agentId
+      });
+      return;
+    }
     default:
       throw new Error(
-        `Unknown command: ${cmd ?? '(none)'}. Try: status | consolidate | project | prune | backup | export | import | stats`
+        `Unknown command: ${cmd ?? '(none)'}. Try: status | consolidate | project | prune | backup | export | import | stats | claim`
       );
   }
 }

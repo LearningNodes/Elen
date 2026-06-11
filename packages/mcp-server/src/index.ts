@@ -14,7 +14,8 @@ const CLI_COMMANDS = new Set([
   'backup',
   'export',
   'import',
-  'stats'
+  'stats',
+  'claim'
 ]);
 
 export interface CliOptions {
@@ -108,7 +109,7 @@ async function startMcp(options: CliOptions) {
   await server.start();
 
   if (process.env.ELEN_LOCAL_API === 'true') {
-    const apiPort = parseInt(process.env.ELEN_API_PORT || '3333', 10);
+    const apiPort = parseInt(process.env.ELEN_LOCAL_API_PORT || process.env.ELEN_API_PORT || '3333', 10);
     startLocalApi(dbPath, apiPort);
   }
 }

@@ -1,12 +1,55 @@
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
+
+export interface ClaimedProjectEntry {
+  workspace_hint?: string;
+  api_key_prefix?: string;
+  claimed_at: string;
+}
 
 export interface ElenUserConfig {
   /** Folder name or path segment → project_id */
   venture_map?: Record<string, string[]>;
   project?: string;
+  /** project_id → claim metadata written by `elen claim` */
+  claimed_projects?: Record<string, ClaimedProjectEntry>;
+}
+
+/**
+ * Read ~/.elen/config.json (or configPath) and parse as ElenUserConfig.
+ * Returns null if the file does not exist or is unparseable.
+ */
+export function readUserConfig(configPath?: string): ElenUserConfig | null {
+  const path = configPath ?? join(homedir(), '.elen', 'config.json');
+  if (!existsSync(path)) return null;
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as ElenUserConfig;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Atomically write an ElenUserConfig to ~/.elen/config.json (or configPath).
+ * Creates the parent directory if it does not exist.
+ * Performs a JSON round-trip validation before writing so a bad caller cannot
+ * produce an empty or truncated file.
+ */
+export function writeUserConfig(config: ElenUserConfig, configPath?: string): void {
+  const path = configPath ?? join(homedir(), '.elen', 'config.json');
+  // Validate by round-tripping through JSON
+  const serialized = JSON.stringify(config, null, 2);
+  JSON.parse(serialized); // throws on bad input — should never happen
+  mkdirSync(dirname(path), { recursive: true });
+  // Atomic write: write to a temp file then rename
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, serialized + '\n', 'utf-8');
+  // On Windows renameSync is not fully atomic across drives, but within the
+  // same directory it is effectively atomic (moves the inode pointer).
+  const { renameSync } = require('node:fs') as typeof import('node:fs');
+  renameSync(tmp, path);
 }
 
 export type ProjectResolveSource =
@@ -25,16 +68,6 @@ export class ProjectResolveError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'ProjectResolveError';
-  }
-}
-
-function readUserConfig(configPath?: string): ElenUserConfig | null {
-  const path = configPath ?? join(homedir(), '.elen', 'config.json');
-  if (!existsSync(path)) return null;
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8')) as ElenUserConfig;
-  } catch {
-    return null;
   }
 }
 
