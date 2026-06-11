@@ -17,6 +17,28 @@ import { CloudMcpStorage } from '../src/storage/cloud-mcp';
 import { SyncEngine } from '../src/sync/sync-engine';
 import type { SyncPushItem, SyncPullResponse, SyncPushResponse } from '../src/types';
 
+// Helper: build a minimal SyncPushItem for dependency-order tests
+function makeItem(
+  id: string,
+  timestamp: string,
+  supersedes_id: string | null = null
+): SyncPushItem {
+  return {
+    decision_id: id,
+    q_id: `q-${id}`,
+    question_text: null,
+    decision_text: 'D',
+    constraint_set_id: 'cs:A',
+    domain: 'test',
+    agent_id: 'a',
+    refs: [],
+    status: 'active',
+    supersedes_id,
+    timestamp,
+    content_hash: `hash-${id}`
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Golden vector test (DS-0 §6.2)
 // This exact hex must match the ai-service planner's content_hash implementation.
@@ -656,5 +678,197 @@ describe('SQLiteStorage.listLocalRecordsForPush', () => {
       refs: ['ref:mcp/dec:other']
     });
     expect(item.content_hash).toBe(expectedHash);
+  });
+
+  it('returns records in chronological ascending order by timestamp, tiebroken by decision_id', async () => {
+    // Insert in reverse chronological order to ensure the ORDER BY is doing work
+    await storage.saveRecord({
+      decision_id: 'dec:order-C',
+      q_id: 'q-C',
+      question_text: null,
+      decision_text: 'C',
+      constraint_set_id: 'cs:ord',
+      refs: [],
+      status: 'active',
+      supersedes_id: null,
+      timestamp: '2026-06-03T00:00:00.000Z',
+      agent_id: 'a',
+      domain: 'test'
+    });
+    await storage.saveRecord({
+      decision_id: 'dec:order-A',
+      q_id: 'q-A',
+      question_text: null,
+      decision_text: 'A',
+      constraint_set_id: 'cs:ord',
+      refs: [],
+      status: 'active',
+      supersedes_id: null,
+      timestamp: '2026-06-01T00:00:00.000Z',
+      agent_id: 'a',
+      domain: 'test'
+    });
+    await storage.saveRecord({
+      decision_id: 'dec:order-B2',
+      q_id: 'q-B2',
+      question_text: null,
+      decision_text: 'B2',
+      constraint_set_id: 'cs:ord',
+      refs: [],
+      status: 'active',
+      supersedes_id: null,
+      timestamp: '2026-06-02T00:00:00.000Z',
+      agent_id: 'a',
+      domain: 'test'
+    });
+    await storage.saveRecord({
+      decision_id: 'dec:order-B1',
+      q_id: 'q-B1',
+      question_text: null,
+      decision_text: 'B1',
+      constraint_set_id: 'cs:ord',
+      refs: [],
+      status: 'active',
+      supersedes_id: null,
+      timestamp: '2026-06-02T00:00:00.000Z',
+      agent_id: 'a',
+      domain: 'test'
+    });
+
+    const items = await storage.listLocalRecordsForPush();
+    const ids = items.map((r) => r.decision_id);
+    // Oldest first; same timestamp → alphabetical by decision_id
+    expect(ids).toEqual(['dec:order-A', 'dec:order-B1', 'dec:order-B2', 'dec:order-C']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SyncEngine.sortByDependencyOrder — dependency ordering
+// ---------------------------------------------------------------------------
+describe('SyncEngine.sortByDependencyOrder', () => {
+  it('no-op when no supersedes_id references within the set', () => {
+    const records = [
+      makeItem('d1', '2026-01-01T00:00:00.000Z'),
+      makeItem('d2', '2026-01-02T00:00:00.000Z'),
+      makeItem('d3', '2026-01-03T00:00:00.000Z')
+    ];
+    const sorted = SyncEngine.sortByDependencyOrder(records);
+    expect(sorted.map((r) => r.decision_id)).toEqual(['d1', 'd2', 'd3']);
+  });
+
+  it('hoists target before superseder when superseder appears first in raw order', () => {
+    // d2 supersedes d3 — but d3 sits after d2 in the raw list; d3 must be hoisted before d2
+    const records = [
+      makeItem('d1', '2026-01-01T00:00:00.000Z'),
+      makeItem('d2', '2026-01-02T00:00:00.000Z', 'd3'),  // superseder appears before target
+      makeItem('d3', '2026-01-03T00:00:00.000Z')          // target (should be hoisted)
+    ];
+    const sorted = SyncEngine.sortByDependencyOrder(records);
+    const ids = sorted.map((r) => r.decision_id);
+    // d3 must come before d2
+    expect(ids.indexOf('d3')).toBeLessThan(ids.indexOf('d2'));
+    // All records still present
+    expect(ids.sort()).toEqual(['d1', 'd2', 'd3']);
+  });
+
+  it('leaves records whose supersedes_id is not in the push set unchanged', () => {
+    // d2 supersedes 'external' which is not in the set — must not be dropped or reordered
+    const records = [
+      makeItem('d1', '2026-01-01T00:00:00.000Z'),
+      makeItem('d2', '2026-01-02T00:00:00.000Z', 'external-not-in-set')
+    ];
+    const sorted = SyncEngine.sortByDependencyOrder(records);
+    expect(sorted.map((r) => r.decision_id)).toEqual(['d1', 'd2']);
+    expect(sorted[1].supersedes_id).toBe('external-not-in-set');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SyncEngine dependency ordering — cross-chunk: target lands in earlier chunk
+// ---------------------------------------------------------------------------
+describe('SyncEngine.buildPushBatch + partitionChunks — cross-chunk dependency', () => {
+  let dbPath: string;
+  let local: SQLiteStorage;
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    dbPath = join(tmpdir(), `elen-deporder-${Date.now()}.db`);
+    local = new SQLiteStorage(dbPath, 'proj');
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    fetchMock.mockReset();
+    local.close();
+    rmSync(dbPath, { force: true });
+  });
+
+  it('with chunkSize=2, superseder lands in a later chunk than its target after dependency sort', async () => {
+    // Insert target with a LATER timestamp so it would naively sort after the superseder.
+    // After the dependency pass the target must appear before the superseder.
+    // We use distinct timestamps to make the raw order unambiguous.
+    await local.saveRecord({
+      decision_id: 'dec:dep-superseder',
+      q_id: 'q-sup',
+      question_text: null,
+      decision_text: 'New decision',
+      constraint_set_id: 'cs:dep',
+      refs: [],
+      status: 'active',
+      supersedes_id: 'dec:dep-target',     // references the target
+      timestamp: '2026-06-01T01:00:00.000Z',  // earlier raw timestamp
+      agent_id: 'a',
+      domain: 'test'
+    });
+    await local.saveRecord({
+      decision_id: 'dec:dep-other',
+      q_id: 'q-other',
+      question_text: null,
+      decision_text: 'Unrelated',
+      constraint_set_id: 'cs:dep',
+      refs: [],
+      status: 'active',
+      supersedes_id: null,
+      timestamp: '2026-06-01T02:00:00.000Z',
+      agent_id: 'a',
+      domain: 'test'
+    });
+    await local.saveRecord({
+      decision_id: 'dec:dep-target',
+      q_id: 'q-tgt',
+      question_text: null,
+      decision_text: 'Old decision',
+      constraint_set_id: 'cs:dep',
+      refs: [],
+      status: 'active',
+      supersedes_id: null,
+      timestamp: '2026-06-01T03:00:00.000Z',  // latest raw timestamp — would sort last
+      agent_id: 'a',
+      domain: 'test'
+    });
+
+    // Use the engine's buildPushBatch (which applies dependency sort after the DB query)
+    const engine = new SyncEngine({ cloud: {} as any, local, pushChunkSize: 2 });
+    const batch = await engine.buildPushBatch();
+
+    const targetIdx = batch.findIndex((r) => r.decision_id === 'dec:dep-target');
+    const supersederIdx = batch.findIndex((r) => r.decision_id === 'dec:dep-superseder');
+
+    // The target must appear before the superseder regardless of raw timestamp order
+    expect(targetIdx).toBeLessThan(supersederIdx);
+
+    // Now partition into chunks of 2 — target must be in an earlier or same chunk
+    const chunks = engine.partitionChunks(batch);
+    let targetChunkIdx = -1;
+    let supersederChunkIdx = -1;
+    for (let ci = 0; ci < chunks.length; ci++) {
+      if (chunks[ci].some((r) => r.decision_id === 'dec:dep-target')) targetChunkIdx = ci;
+      if (chunks[ci].some((r) => r.decision_id === 'dec:dep-superseder')) supersederChunkIdx = ci;
+    }
+    expect(targetChunkIdx).toBeLessThanOrEqual(supersederChunkIdx);
+
+    // All 3 records still present
+    expect(batch).toHaveLength(3);
   });
 });

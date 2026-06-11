@@ -517,7 +517,8 @@ export class SQLiteStorage implements StorageAdapter {
               cs.atoms AS cs_atoms, cs.summary AS cs_summary
        FROM records r
        LEFT JOIN constraint_sets cs ON cs.constraint_set_id = r.constraint_set_id
-       WHERE r.source = 'local'`
+       WHERE r.source = 'local'
+       ORDER BY r.timestamp ASC, r.decision_id ASC`
     ).all() as Array<{
       decision_id: string;
       q_id: string;

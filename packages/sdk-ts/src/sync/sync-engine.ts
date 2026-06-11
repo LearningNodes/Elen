@@ -44,11 +44,64 @@ export class SyncEngine {
   }
 
   /**
+   * Topologically sort records so that a superseded target always appears before
+   * its superseder in the output array.
+   *
+   * Algorithm:
+   *   - Build an index of decision_id → position in the input array.
+   *   - Walk the array left-to-right.  When a record's supersedes_id refers to
+   *     another record in the push set that sits AFTER the current position,
+   *     splice that target record out and insert it immediately before the
+   *     current record (hoist).
+   *   - Repeat until no more hoists are required.  Cycles are impossible by
+   *     construction (supersedes is a DAG), but the loop is bounded by the
+   *     array length squared as a safety guard.
+   *
+   * Records whose supersedes_id target is NOT in the push set are left unchanged.
+   */
+  static sortByDependencyOrder(records: SyncPushItem[]): SyncPushItem[] {
+    const result = [...records];
+
+    // Track which decision_ids are in the push set
+    const inSet = new Set(result.map((r) => r.decision_id));
+
+    let changed = true;
+    let guardIterations = result.length * result.length + 1;
+
+    while (changed && guardIterations-- > 0) {
+      changed = false;
+      for (let i = 0; i < result.length; i++) {
+        const supersedes = result[i].supersedes_id;
+        if (!supersedes || !inSet.has(supersedes)) continue;
+
+        // Find where the target currently sits
+        const targetIdx = result.findIndex((r) => r.decision_id === supersedes);
+        if (targetIdx === -1 || targetIdx < i) continue; // already before us
+
+        // Hoist: remove target from its current position, insert before i
+        const [target] = result.splice(targetIdx, 1);
+        result.splice(i, 0, target);
+        changed = true;
+        break; // restart the scan after mutating
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Build the push batch payload from local records.
+   *
+   * listLocalRecordsForPush returns rows ordered chronologically ascending
+   * (oldest first), stable-tiebroken by decision_id.  After retrieval a
+   * dependency pass ensures that any record whose supersedes_id refers to
+   * another record in the push set is positioned after its target.
+   *
    * Exported so callers can inspect the batch before pushing.
    */
   async buildPushBatch(): Promise<SyncPushItem[]> {
-    return this.local.listLocalRecordsForPush();
+    const records = await this.local.listLocalRecordsForPush();
+    return SyncEngine.sortByDependencyOrder(records);
   }
 
   /**
