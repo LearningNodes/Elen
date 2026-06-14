@@ -1,7 +1,8 @@
 import { ElenClient } from './client';
 import { CloudMcpStorage } from './storage/cloud-mcp';
 import { InMemoryStorage, SQLiteStorage, type StorageAdapter } from './storage';
-import type { CommitDecisionInput, ElenConfig, LogDecisionInput, SearchOptions } from './types';
+import { SyncEngine } from './sync/sync-engine';
+import type { CommitDecisionInput, ElenConfig, LogDecisionInput, SearchOptions, SyncPushResponse } from './types';
 import type { ExportBundle } from './admin';
 
 export class Elen {
@@ -24,18 +25,17 @@ export class Elen {
 
   private createStorage(config: ElenConfig): StorageAdapter {
     if (config.storage === 'cloud') {
-      if (!config.apiUrl) {
-        throw new Error('Cloud MCP storage requires apiUrl (ELEN_CLOUD_URL)');
+      const resolvedUrl = config.apiUrl ?? config.cloudBaseUrl;
+      if (!resolvedUrl) {
+        throw new Error('Cloud MCP storage requires apiUrl or cloudBaseUrl (ELEN_CLOUD_URL)');
       }
-      if (!config.userEmail) {
-        throw new Error('Cloud MCP storage requires userEmail (ELEN_USER_EMAIL)');
-      }
+      // apiKey auth is primary for sync; userEmail is optional/legacy for /elen/mcp/commit
       const localFallback =
         config.sqlitePath != null
           ? new SQLiteStorage(config.sqlitePath, config.projectId, config.defaultProjectIsolation ?? 'strict')
           : undefined;
       return new CloudMcpStorage({
-        apiUrl: config.apiUrl,
+        apiUrl: resolvedUrl,
         userEmail: config.userEmail,
         agentId: config.agentId,
         apiKey: config.apiKey,
@@ -130,6 +130,46 @@ export class Elen {
     return db.importJson(bundle);
   }
 
+  /**
+   * Full bidirectional sync — pull cloud records into local SQLite, then push
+   * local records to cloud. Requires storage='cloud' with sqlitePath set.
+   *
+   * BLOCKER: gateway /elen/sync/* must use Bearer lnk_ auth before this is live.
+   * ELEN_API_KEY and ELEN_CLOUD_API_KEY are both accepted (alias via config.apiKey).
+   */
+  async sync(): Promise<{
+    pull: { upserted: number; pages: number };
+    push: SyncPushResponse;
+  }> {
+    const engine = this.requireSyncEngine();
+    return engine.run();
+  }
+
+  /** Push local records to cloud only. */
+  async push(): Promise<SyncPushResponse> {
+    const engine = this.requireSyncEngine();
+    return engine.push();
+  }
+
+  /** Pull cloud records into local SQLite only. */
+  async pull(): Promise<{ upserted: number; pages: number }> {
+    const engine = this.requireSyncEngine();
+    return engine.pull();
+  }
+
+  private requireSyncEngine(): SyncEngine {
+    if (!(this.storage instanceof CloudMcpStorage)) {
+      throw new Error('Sync requires storage="cloud" with a CloudMcpStorage instance');
+    }
+    const local = (this.storage as CloudMcpStorage & { opts: { localFallback?: StorageAdapter } });
+    // Access localFallback — CloudMcpStorage opts are private; cast via any
+    const localFallback = (this.storage as any).opts?.localFallback as SQLiteStorage | undefined;
+    if (!(localFallback instanceof SQLiteStorage)) {
+      throw new Error('Sync requires sqlitePath set on cloud storage config');
+    }
+    return new SyncEngine({ cloud: this.storage as CloudMcpStorage, local: localFallback });
+  }
+
   close(): void {
     if (this.storage instanceof SQLiteStorage) {
       this.storage.close();
@@ -145,3 +185,5 @@ export * from './project-resolve';
 export * from './similarity';
 export * from './sqlite-open';
 export type { ExportBundle } from './admin';
+export * from './sync/content-hash';
+export * from './sync/sync-engine';

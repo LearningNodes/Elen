@@ -15,6 +15,8 @@ import { join } from 'node:path';
 const ALLOWED_ORIGINS: (string | RegExp)[] = [
   'https://app.elen.learningnodes.com',
   'https://elen.learningnodes.com',
+  'https://workstation.learningnodes.com',
+  'https://workstation.dev.learningnodes.com',
   /^http:\/\/localhost(:\d+)?$/,
   /^http:\/\/127\.0\.0\.1(:\d+)?$/,
 ];
@@ -80,7 +82,7 @@ function createLocalApiApp(dbPath: string): express.Express {
     const db = openDb(dbPath);
     let recordCount = 0;
     if (db) { try { recordCount = (db.prepare('SELECT COUNT(*) AS n FROM records').get() as any)?.n || 0; } catch {} db.close(); }
-    res.json({ ok: true, version: '0.1.6', db: dbPath, dbExists, recordCount });
+    res.json({ ok: true, version: '0.2.0', db: dbPath, dbExists, recordCount });
   });
 
   // Projects
@@ -277,10 +279,17 @@ function createLocalApiApp(dbPath: string): express.Express {
 
 export function startLocalApi(dbPath: string, port: number = 3333): void {
   const app = createLocalApiApp(dbPath);
-  app.listen(port, () => {
+  const server = app.listen(port, () => {
     // Write to stderr so it doesn't interfere with MCP stdio on stdout
     process.stderr.write(`\n  ✦ Elen Local API running at http://localhost:${port}\n`);
     process.stderr.write(`  ✦ Reading from ${dbPath}\n`);
     process.stderr.write(`  ✦ Open app.elen.learningnodes.com to view your workstation\n\n`);
+  });
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      process.stderr.write(`[elen-local-api] Port ${port} already in use — local API not started. Another instance may be running.\n`);
+    } else {
+      process.stderr.write(`[elen-local-api] Server error: ${err.message}\n`);
+    }
   });
 }

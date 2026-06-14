@@ -11,7 +11,7 @@
  *   3. Clusters them by: temporal proximity, domain, keyword overlap, shared citations
  *   4. Assigns thread_id and thread_name to clustered records
  *   5. Detects cross-thread links from shared linkedPrecedents
- *   6. Writes enriched metadata back to record_json
+ *   6. Writes enriched metadata back to payload_json
  * 
  * Usage:
  *   node consolidator.js                    # Run once
@@ -246,10 +246,10 @@ function consolidate(dbPath) {
 
     try {
         // Read all records
-        const rows = db.prepare('SELECT record_id, record_json FROM records').all();
+        const rows = db.prepare('SELECT record_id, payload_json FROM records').all();
         const records = rows.map(row => {
             try {
-                return { ...JSON.parse(row.record_json), record_id: row.record_id };
+                return { ...JSON.parse(row.payload_json), record_id: row.record_id };
             } catch {
                 return null;
             }
@@ -269,7 +269,7 @@ function consolidate(dbPath) {
             const clusters = clusterRecords(unthreaded);
 
             const updateStmt = db.prepare(`
-        UPDATE records SET record_json = @record_json WHERE record_id = @record_id
+        UPDATE records SET payload_json = @payload_json WHERE record_id = @record_id
       `);
 
             const updateTransaction = db.transaction((updates) => {
@@ -301,7 +301,7 @@ function consolidate(dbPath) {
 
                     updates.push({
                         record_id: record.record_id,
-                        record_json: JSON.stringify(record)
+                        payload_json: JSON.stringify(record)
                     });
                     clustered++;
                 }
@@ -331,13 +331,13 @@ function consolidate(dbPath) {
 
             singletonUpdates.push({
                 record_id: record.record_id,
-                record_json: JSON.stringify(record)
+                payload_json: JSON.stringify(record)
             });
         }
 
         if (singletonUpdates.length > 0) {
             const singletonStmt = db.prepare(`
-                UPDATE records SET record_json = @record_json WHERE record_id = @record_id
+                UPDATE records SET payload_json = @payload_json WHERE record_id = @record_id
             `);
             const singletonTx = db.transaction((updates) => {
                 for (const update of updates) {
@@ -349,10 +349,10 @@ function consolidate(dbPath) {
         }
 
         // Detect cross-thread bridges (across ALL records)
-        const allRecordsRefreshed = db.prepare('SELECT record_id, record_json FROM records').all()
+        const allRecordsRefreshed = db.prepare('SELECT record_id, payload_json FROM records').all()
             .map(row => {
                 try {
-                    return { ...JSON.parse(row.record_json), record_id: row.record_id };
+                    return { ...JSON.parse(row.payload_json), record_id: row.record_id };
                 } catch {
                     return null;
                 }
@@ -380,7 +380,7 @@ function consolidate(dbPath) {
                     record.linked_records = [...existingLinks];
                     bridgeUpdates.push({
                         record_id: record.record_id,
-                        record_json: JSON.stringify(record)
+                        payload_json: JSON.stringify(record)
                     });
                     bridged++;
                 }
@@ -388,7 +388,7 @@ function consolidate(dbPath) {
 
             if (bridgeUpdates.length > 0) {
                 const updateStmt = db.prepare(`
-          UPDATE records SET record_json = @record_json WHERE record_id = @record_id
+          UPDATE records SET payload_json = @payload_json WHERE record_id = @record_id
         `);
                 const updateTransaction = db.transaction((updates) => {
                     for (const update of updates) {

@@ -1,0 +1,3 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`computeContentHash — DS-0 §6.2 golden vector > produces stable hex for a known record 1`] = `"c1ebc1ef6f0dc7631b27363c0c687bafcddbcf484fb2e7dc44ce9bdbcf2cff38"`;
