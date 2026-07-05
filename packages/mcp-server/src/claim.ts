@@ -26,9 +26,8 @@ export interface ClaimOptions {
 }
 
 /**
- * Information the gateway returns when we pre-check the API key.
- * The gateway endpoint GET /elen/sync/workspace derives the workspace from
- * the Bearer key, so the user never has to supply it.
+ * Information the gateway returns from GET /elen/sync/workspace.
+ * workspace_id is a string (BigInt stringified); workspace_name and record_count may be absent.
  */
 interface WorkspaceInfo {
   workspace_id: string;
@@ -36,6 +35,7 @@ interface WorkspaceInfo {
   record_count?: number;
 }
 
+/** GET /elen/sync/workspace — Bearer lnk_ key determines the workspace. */
 async function fetchWorkspaceInfo(cloudUrl: string, apiKey: string): Promise<WorkspaceInfo> {
   const base = cloudUrl.replace(/\/$/, '');
   const res = await fetch(`${base}/elen/sync/workspace`, {
@@ -104,6 +104,9 @@ export async function runClaim(opts: ClaimOptions): Promise<void> {
   process.stdout.write(`  Project : ${projectId}\n`);
   process.stdout.write(`  Workspace: ${workspaceName}\n`);
   process.stdout.write(`  API key : ${keyPrefix}\n`);
+  if (typeof workspaceInfo.record_count === 'number') {
+    process.stdout.write(`  Workspace records (server): ${workspaceInfo.record_count}\n`);
+  }
   process.stdout.write(`  Records to push: ${localCount}\n`);
   process.stdout.write('\n');
   process.stdout.write(

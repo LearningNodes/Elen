@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { Elen, resolveProjectId, ProjectResolveError } from '@learningnodes/elen';
+import { Elen, resolveProjectId, ProjectResolveError, resolveCredentials } from '@learningnodes/elen';
 import { createMcpServer, defaultStoragePath } from './server';
 import { startLocalApi } from './local-api';
 import { runElenCli } from './cli';
@@ -15,7 +15,10 @@ const CLI_COMMANDS = new Set([
   'export',
   'import',
   'stats',
-  'claim'
+  'claim',
+  'login',
+  'whoami',
+  'logout'
 ]);
 
 export interface CliOptions {
@@ -58,6 +61,11 @@ export function parseMcpArgs(argv: string[]): CliOptions {
       i += 1;
     }
   }
+
+  const creds = resolveCredentials();
+  if (cloudUrl === undefined) cloudUrl = creds.cloudUrl;
+  if (userEmail === undefined) userEmail = creds.userEmail;
+  if (cloudApiKey === undefined) cloudApiKey = creds.apiKey;
 
   const { projectId } = resolveProjectId({ explicitProject });
   return { agentId, projectId, storagePath, connected, cloudUrl, userEmail, cloudApiKey };

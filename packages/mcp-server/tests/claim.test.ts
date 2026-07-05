@@ -83,11 +83,11 @@ const WORKSPACE_RESPONSE = {
 };
 
 const PUSH_RESPONSE_CREATED = {
-  results: [{ decision_id: 'dec:test-001', result: 'created' }]
+  results: [{ decision_id: 'dec:test-001', status: 'created' }]
 };
 
 const PUSH_RESPONSE_DUPLICATE = {
-  results: [{ decision_id: 'dec:test-001', result: 'duplicate' }]
+  results: [{ decision_id: 'dec:test-001', status: 'duplicate' }]
 };
 
 // ---------------------------------------------------------------------------

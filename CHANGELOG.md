@@ -2,6 +2,36 @@
 
 All notable changes to Elen packages are documented here.
 
+## 0.3.0 — 2026-07-03
+
+### Added
+
+- **Terminal auth** (`mcp-server`, `sdk-ts`): `elen login` / `elen whoami` / `elen logout` CLI commands. Key-paste login validates an `lnk_` API key via `GET /elen/sync/workspace` and persists an `auth` block to `~/.elen/config.json`. Shared `resolveCredentials` module resolves API key, cloud URL, and user email from flags → env → config → default.
+- **Team-read MCP tools** (`mcp-server`): `elen_team_search` (workspace keyword search via `GET /elen/mcp/search`) and `elen_incoming` (cross-principal grants inbox via `GET /elen/mcp/incoming`). Query-only — nothing written to local SQLite.
+- **Onboarding docs** (repo root): `TERMINAL_AUTH.md`, `CLAIM_FLOW.md`, and `SETUP.md` covering terminal auth, claim flow, and connected-mode MCP configuration.
+
+### Fixed
+
+- **Sync push — chunked batches** (`sdk-ts`): Push sends records in chunks (default 20) to survive server body limits; partial progress is reported on failure; re-run is idempotent via content-hash dedup.
+- **Sync wire format** (`sdk-ts`): Aligned push request/response to deployed server — `items` array and server `status` field names on push results.
+- **Sync push ordering** (`sdk-ts`): Supersede targets are pushed before their superseders so dependency order is respected server-side.
+- **Documentation npx pins** corrected from `@learningnodes/elen-mcp@0.1.7` to `@0.3.0` in `AGENTS.md` and `README.md`.
+
+### Changed
+
+- **Claim flow** (`mcp-server`): Consent summary now shows server-side workspace record count when returned by `GET /elen/sync/workspace`.
+- **Sync auth comments** (`sdk-ts`): Removed stale BLOCKER notes on `CloudMcpStorage` — gateway `/elen/sync/*` routes authenticate via Bearer `lnk_` API keys.
+
+### Package versions
+
+| Package | Old | New |
+|---|---|---|
+| `@learningnodes/elen-core` | 0.2.0 | 0.3.0 |
+| `@learningnodes/elen` (sdk-ts) | 0.2.0 | 0.3.0 |
+| `@learningnodes/elen-mcp` | 0.2.0 | 0.3.0 |
+| `@learningnodes/elen-consolidator` | 0.2.0 | 0.3.0 |
+| `@learningnodes/elen-local-api` | 0.2.0 | 0.3.0 |
+
 ## 0.2.0 — 2026-06-11
 
 ### Added

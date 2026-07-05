@@ -182,6 +182,7 @@ export * from './id';
 export * from './storage';
 export * from './types';
 export * from './project-resolve';
+export * from './resolve-credentials';
 export * from './similarity';
 export * from './sqlite-open';
 export type { ExportBundle } from './admin';

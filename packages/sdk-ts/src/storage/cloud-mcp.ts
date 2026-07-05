@@ -33,8 +33,8 @@ export interface CloudMcpStorageOptions {
  * so suggest/search sees shared content without client-side ACL filtering
  * (server already filtered on push/pull).
  *
- * NOTE: /elen/sync/* routes depend on Bearer lnk_ API-key auth at the gateway.
- * Do NOT ship sync calls against JWT-only sync routes — see BLOCKER note in plan.
+ * Sync routes authenticate at the gateway via Bearer lnk_ API keys (apiKeyAuth);
+ * the key alone determines the workspace.
  */
 export class CloudMcpStorage implements StorageAdapter {
   constructor(private readonly opts: CloudMcpStorageOptions) {}
@@ -64,8 +64,7 @@ export class CloudMcpStorage implements StorageAdapter {
    * Server reads req.body.items — the SyncPushRequest type uses field `items`.
    * Throws on non-2xx with body text (matches existing error style).
    *
-   * BLOCKER (DS-0 plan notes #1): gateway /elen/sync/* must use Bearer lnk_ auth,
-   * not JWT+X-User-Email. Do not call in prod until gateway repoints these routes.
+   * Authenticated at the gateway with the Bearer lnk_ API key.
    */
   async pushBatch(body: SyncPushRequest): Promise<SyncPushResponse> {
     const res = await fetch(`${this.baseUrl()}/elen/sync/push`, {
@@ -84,7 +83,7 @@ export class CloudMcpStorage implements StorageAdapter {
    * GET /elen/sync/pull — fetch a page of cloud records since cursor.
    * Throws on non-2xx with body text.
    *
-   * BLOCKER (DS-0 plan notes #1): same gateway auth constraint as pushBatch.
+   * Authenticated at the gateway with the Bearer lnk_ API key.
    */
   async pullSince(cursor: string | null, limit = 100): Promise<SyncPullResponse> {
     const params = new URLSearchParams({ limit: String(limit) });
