@@ -14,6 +14,8 @@ export {
 } from './legacy';
 export { elenStatusTool, handleStatus } from './status';
 export { elenConsolidateTool, handleConsolidate, consolidateInputSchema } from './consolidate';
+export { elenTeamSearchTool, handleTeamSearch, teamSearchInputSchema } from './team-search';
+export { elenIncomingTool, handleIncoming, incomingInputSchema } from './incoming';
 
 export const ELEN_TOOLS = [
   'elen_commit',
@@ -25,5 +27,7 @@ export const ELEN_TOOLS = [
   'elen_status',
   'elen_consolidate',
   'elen_log_decision',
-  'elen_search_precedents'
+  'elen_search_precedents',
+  'elen_team_search',
+  'elen_incoming'
 ] as const;

@@ -1,7 +1,7 @@
 import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { Elen } from '@learningnodes/elen';
+import { Elen, resolveCredentials } from '@learningnodes/elen';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -16,6 +16,8 @@ import {
   elenSearchPrecedentsTool,
   elenStatusTool,
   elenConsolidateTool,
+  elenTeamSearchTool,
+  elenIncomingTool,
   handleCommit,
   handleSuggest,
   handleExpand,
@@ -25,7 +27,9 @@ import {
   handleLogDecision,
   handleSearchPrecedents,
   handleStatus,
-  handleConsolidate
+  handleConsolidate,
+  handleTeamSearch,
+  handleIncoming
 } from './tools';
 
 export interface McpServerOptions {
@@ -48,8 +52,9 @@ export function createElenClient(options: McpServerOptions): Elen {
   mkdirSync(dirname(sqlitePath), { recursive: true });
 
   if (options.connected) {
-    const cloudUrl = options.cloudUrl ?? process.env.ELEN_CLOUD_URL;
-    const userEmail = options.userEmail ?? process.env.ELEN_USER_EMAIL;
+    const creds = resolveCredentials();
+    const cloudUrl = options.cloudUrl ?? creds.cloudUrl;
+    const userEmail = options.userEmail ?? creds.userEmail;
     if (!cloudUrl || !userEmail) {
       throw new Error('Connected MCP mode requires ELEN_CLOUD_URL and ELEN_USER_EMAIL (or --cloud-url / --user-email)');
     }
@@ -59,7 +64,7 @@ export function createElenClient(options: McpServerOptions): Elen {
       storage: 'cloud',
       apiUrl: cloudUrl,
       userEmail,
-      apiKey: options.cloudApiKey ?? process.env.ELEN_CLOUD_API_KEY,
+      apiKey: options.cloudApiKey ?? creds.apiKey,
       sqlitePath
     });
   }
@@ -100,6 +105,10 @@ export async function routeToolCall(
       return handleLogDecision(elen, args);
     case elenSearchPrecedentsTool.name:
       return handleSearchPrecedents(elen, args);
+    case elenTeamSearchTool.name:
+      return handleTeamSearch(elen, args);
+    case elenIncomingTool.name:
+      return handleIncoming(elen, args);
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -132,7 +141,9 @@ export function createMcpServer(options: McpServerOptions) {
       elenStatusTool,
       elenConsolidateTool,
       elenLogDecisionTool,
-      elenSearchPrecedentsTool
+      elenSearchPrecedentsTool,
+      elenTeamSearchTool,
+      elenIncomingTool
     ]
   }));
 

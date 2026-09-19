@@ -1,12 +1,37 @@
 #!/usr/bin/env node
 import { createRequire } from 'node:module';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { resolveProjectId, ProjectResolveError } from '@learningnodes/elen';
+import { resolveProjectId, ProjectResolveError, resolveCredentials } from '@learningnodes/elen';
 import { Elen } from '@learningnodes/elen';
 import { defaultStoragePath } from './server';
 import { runClaim } from './claim';
+import { runLogin, runWhoami, runLogout } from './login';
 
 const requireConsolidator = createRequire(__filename);
+
+function parseCredentialFlags(rest: string[]): {
+  apiKeyFlag?: string;
+  cloudUrlFlag?: string;
+  userEmailFlag?: string;
+} {
+  let apiKeyFlag: string | undefined;
+  let cloudUrlFlag: string | undefined;
+  let userEmailFlag: string | undefined;
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i];
+    if (arg === '--key' || arg === '--api-key') {
+      apiKeyFlag = rest[i + 1];
+      i += 1;
+    } else if (arg === '--cloud-url') {
+      cloudUrlFlag = rest[i + 1];
+      i += 1;
+    } else if (arg === '--user-email') {
+      userEmailFlag = rest[i + 1];
+      i += 1;
+    }
+  }
+  return { apiKeyFlag, cloudUrlFlag, userEmailFlag };
+}
 
 export interface CliGlobalOptions {
   agentId: string;
@@ -109,26 +134,37 @@ export async function runCliCommand(argv: string[], globals: CliGlobalOptions): 
       return;
     }
     case 'claim': {
-      const cloudUrl = process.env.ELEN_CLOUD_URL;
-      const apiKey = process.env.ELEN_API_KEY ?? process.env.ELEN_CLOUD_API_KEY;
-      if (!cloudUrl) {
-        throw new Error('claim requires ELEN_CLOUD_URL to be set');
-      }
-      if (!apiKey) {
-        throw new Error('claim requires ELEN_API_KEY (or ELEN_CLOUD_API_KEY) to be set');
+      const credFlags = parseCredentialFlags(rest);
+      const creds = resolveCredentials(credFlags);
+      if (!creds.apiKey) {
+        throw new Error('claim requires ELEN_CLOUD_API_KEY (or ELEN_API_KEY, --key, or `elen login`)');
       }
       await runClaim({
         projectId: globals.projectId,
         storagePath: globals.storagePath,
-        cloudUrl,
-        apiKey,
+        cloudUrl: creds.cloudUrl,
+        apiKey: creds.apiKey,
         agentId: globals.agentId
       });
       return;
     }
+    case 'login': {
+      const credFlags = parseCredentialFlags(rest);
+      await runLogin(credFlags);
+      return;
+    }
+    case 'whoami': {
+      const credFlags = parseCredentialFlags(rest);
+      await runWhoami(credFlags);
+      return;
+    }
+    case 'logout': {
+      await runLogout();
+      return;
+    }
     default:
       throw new Error(
-        `Unknown command: ${cmd ?? '(none)'}. Try: status | consolidate | project | prune | backup | export | import | stats | claim`
+        `Unknown command: ${cmd ?? '(none)'}. Try: status | consolidate | project | prune | backup | export | import | stats | claim | login | whoami | logout`
       );
   }
 }

@@ -18,7 +18,7 @@ Elen is evolving from a local, single-player decision memory tool into a central
 *In progress. Providing human oversight, metrics, and relationship management.*
 
 - ✅ **Elen Workstation**: Cloud-hosted dashboard at [app.elen.learningnodes.com](https://app.elen.learningnodes.com). Data stays local — browser fetches from local MCP.
-- 📋 **Agent Relationship Control Panel** *(planned — not built)*: User-controlled trust rules and sharing permissions between agents/workspaces. **Known drift (2026-05-21):** `elen-cloud/ai-service` auto-commits accepted suggestions and `PostgresStorage.searchRecords()` can return a **global cross-workspace pool** with no operator UI — resolve via sharing model + panel before marketing this as shipped.
+- ✅ **Agent Relationship Control Panel**: Server-backed outbound and inbound sharing grants with acknowledgement, shipped via the `/control/network` dashboard. User-controlled trust rules and sharing permissions between agents/workspaces.
 - 📋 **Extensible Configuration** *(planned)*: Future controls for agent autonomy, token budgets, and domain restrictions beyond today's env-based `MODEL_*` map.
 
 ## Phase 3: "The Decision Network" (Graph Network Visualization)

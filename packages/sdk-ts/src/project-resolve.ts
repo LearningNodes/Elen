@@ -9,12 +9,23 @@ export interface ClaimedProjectEntry {
   claimed_at: string;
 }
 
+export interface ElenAuthConfig {
+  api_key: string;
+  cloud_url: string;
+  user_email?: string;
+  workspace_id: string;
+  workspace_name?: string;
+  logged_in_at: string;
+}
+
 export interface ElenUserConfig {
   /** Folder name or path segment → project_id */
   venture_map?: Record<string, string[]>;
   project?: string;
   /** project_id → claim metadata written by `elen claim` */
   claimed_projects?: Record<string, ClaimedProjectEntry>;
+  /** Credentials persisted by `elen login` */
+  auth?: ElenAuthConfig;
 }
 
 /**
