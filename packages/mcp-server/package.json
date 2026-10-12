@@ -1,6 +1,28 @@
 {
   "name": "@learningnodes/elen-mcp",
-  "version": "0.3.0",
+  "version": "0.3.1",
+  "description": "Open-source MCP server that records your coding agent's decisions with their limits, marks old ones superseded, and keeps them in a local SQLite file. Part of Learning Nodes, the DecisionOps workspace.",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "decision-memory",
+    "decisionops",
+    "adr",
+    "claude-code",
+    "cursor",
+    "agents-md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LearningNodes/Elen.git",
+    "directory": "packages/mcp-server"
+  },
+  "homepage": "https://elen.learningnodes.com",
+  "bugs": {
+    "url": "https://github.com/LearningNodes/Elen/issues"
+  },
+  "mcpName": "com.learningnodes/elen",
   "license": "AGPL-3.0",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

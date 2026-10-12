@@ -8,9 +8,15 @@
 import express from 'express';
 import cors from 'cors';
 import Database from 'better-sqlite3';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+
+/** The package version, read from the package.json one folder above src/ or dist/. */
+export function packageVersion(): string {
+  const manifest = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as { version: string };
+  return manifest.version;
+}
 
 const ALLOWED_ORIGINS: (string | RegExp)[] = [
   'https://app.elen.learningnodes.com',
@@ -71,7 +77,7 @@ function emptyStats() {
 
 /* ── Express app factory ─────────────────────────── */
 
-function createLocalApiApp(dbPath: string): express.Express {
+export function createLocalApiApp(dbPath: string): express.Express {
   const app = express();
   app.use(cors({ origin: ALLOWED_ORIGINS, optionsSuccessStatus: 200 }));
   app.use(express.json());
@@ -82,7 +88,7 @@ function createLocalApiApp(dbPath: string): express.Express {
     const db = openDb(dbPath);
     let recordCount = 0;
     if (db) { try { recordCount = (db.prepare('SELECT COUNT(*) AS n FROM records').get() as any)?.n || 0; } catch {} db.close(); }
-    res.json({ ok: true, version: '0.2.0', db: dbPath, dbExists, recordCount });
+    res.json({ ok: true, version: packageVersion(), db: dbPath, dbExists, recordCount });
   });
 
   // Projects

@@ -4,8 +4,7 @@
 </p>
 
 <p align="center">
-  A decision record protocol for AI agents and the humans who work with them.<br>
-  Log decisions. Search precedents. Build institutional memory.
+  Elen is an open-source MCP server that records the decisions your coding agent makes, with the limits that bound them, and marks old decisions as superseded. It installs with one npx line, works with Cursor, Claude Code and any MCP client, and keeps decisions in a local SQLite file.
 </p>
 
 <p align="center">
@@ -157,7 +156,9 @@ Agent faces a problem
 
 See [ROADMAP.md](./ROADMAP.md) for what's next.
 
-## Elen Workstation
+## Elen local dashboard
+
+Elen is the open-source part of Learning Nodes, the DecisionOps workspace. For the business decisions behind the code: https://workstation.learningnodes.com?utm_source=elen-readme&utm_medium=referral&utm_campaign=github-readme
 
 The Elen Workstation is a visual dashboard for your decision network at [app.elen.learningnodes.com](https://app.elen.learningnodes.com). Your data never leaves your machine — the cloud serves only the UI shell, and the browser fetches data from your local MCP.
 
