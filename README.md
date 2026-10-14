@@ -69,7 +69,7 @@ Add Elen as an MCP server — your agent gets tools with descriptions that tell 
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.3.0"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.3.1"]
     }
   }
 }
@@ -169,7 +169,7 @@ The Elen Workstation is a visual dashboard for your decision network at [app.ele
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.3.0"],
+      "args": ["-y", "@learningnodes/elen-mcp@0.3.1"],
       "env": {
         "ELEN_LOCAL_API": "true"
       }
@@ -226,7 +226,7 @@ Same config for all:
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.3.0"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.3.1"]
     }
   }
 }
