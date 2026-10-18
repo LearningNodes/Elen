@@ -5,6 +5,7 @@ import type {
   DecisionRecord,
   MinimalDecisionRecord
 } from '@learningnodes/elen-core';
+import { tokenize, tokenMatchScore, TOKEN_MATCH_THRESHOLD } from '../similarity';
 import type { SearchOptions } from '../types';
 import type { StorageAdapter } from './interface';
 
@@ -32,11 +33,19 @@ export class InMemoryStorage implements StorageAdapter {
       });
     }
     if (opts.query) {
-      const needle = opts.query.toLowerCase();
-      results = results.filter((r) => {
-        const haystack = 'decision_text' in r ? `${r.question_text ?? ''} ${r.decision_text} ${r.domain}` : `${r.question} ${r.answer} ${r.domain} ${r.constraints_snapshot.map(c=>c.description).join(' ')} ${r.evidence_snapshot.map(e=>`${e.claim} ${e.proof}`).join(' ')}`;
-        return haystack.toLowerCase().includes(needle);
-      });
+      const haystackOf = (r: MinimalDecisionRecord | DecisionRecord) =>
+        'decision_text' in r ? `${r.question_text ?? ''} ${r.decision_text} ${r.domain}` : `${r.question} ${r.answer} ${r.domain} ${r.constraints_snapshot.map(c=>c.description).join(' ')} ${r.evidence_snapshot.map(e=>`${e.claim} ${e.proof}`).join(' ')}`;
+      const tokens = tokenize(opts.query);
+      if (tokens.length > 0) {
+        results = results
+          .map((r) => ({ r, score: tokenMatchScore(tokens, haystackOf(r)) }))
+          .filter((s) => s.score >= TOKEN_MATCH_THRESHOLD)
+          .sort((a, b) => b.score - a.score)
+          .map((s) => s.r);
+      } else {
+        const needle = opts.query.toLowerCase();
+        results = results.filter((r) => haystackOf(r).toLowerCase().includes(needle));
+      }
     }
     const limit = opts.limit ?? results.length;
     return results.slice(0, limit);

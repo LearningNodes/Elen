@@ -198,12 +198,25 @@ export class ElenClient {
     return results;
   }
 
-  async expand(decisionId: string): Promise<{ record: MinimalDecisionRecord, constraints: ConstraintSet } | null> {
+  async expand(decisionId: string): Promise<{ record: MinimalDecisionRecord | DecisionRecord, constraints: ConstraintSet | null } | null> {
     const record = await this.storage.getRecord(decisionId);
-    if (!record || !('constraint_set_id' in record)) return null;
+    if (!record) return null;
 
-    const constraints = await this.storage.getConstraintSet(record.constraint_set_id);
-    if (!constraints) return null;
+    // A missing or empty constraint set must not hide an existing record —
+    // legacy records have constraint_set_id '' and some older commits lost
+    // their constraint sets to a silent insert failure.
+    let constraints: ConstraintSet | null = null;
+    const csId = 'constraint_set_id' in record ? record.constraint_set_id : undefined;
+    if (csId) {
+      constraints = await this.storage.getConstraintSet(csId);
+    }
+    if (!constraints && 'constraints_snapshot' in record && Array.isArray(record.constraints_snapshot)) {
+      constraints = {
+        constraint_set_id: csId ?? '',
+        atoms: record.constraints_snapshot.map((c) => c.description),
+        summary: 'Reconstructed from legacy constraints snapshot'
+      };
+    }
 
     return { record, constraints };
   }

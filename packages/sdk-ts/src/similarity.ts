@@ -53,6 +53,21 @@ export function cosineSimilarity(textA: string, textB: string): number {
 
 export const DEFAULT_SIMILARITY_THRESHOLD = 0.55;
 
+/** Minimum fraction of query tokens that must appear in a corpus for a search hit. */
+export const TOKEN_MATCH_THRESHOLD = 0.6;
+
+/**
+ * Fraction of query tokens present in the corpus (0..1).
+ * Multi-keyword queries match records containing the keywords anywhere,
+ * unlike whole-phrase substring matching.
+ */
+export function tokenMatchScore(queryTokens: string[], corpus: string): number {
+  if (queryTokens.length === 0) return 0;
+  const haystack = corpus.toLowerCase();
+  const matched = queryTokens.filter((t) => haystack.includes(t)).length;
+  return matched / queryTokens.length;
+}
+
 export interface SimilarityCandidate {
   decision_id: string;
   question_text?: string;

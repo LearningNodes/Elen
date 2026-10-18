@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { CompetencyProfile, ConstraintSet, DecisionContext, DecisionRecord, MinimalDecisionRecord } from '@learningnodes/elen-core';
 import { backupDatabase, exportDatabase, importDatabase, type ExportBundle } from '../admin';
 import { buildGraphMeta } from '../graph-meta';
-import { cosineSimilarity } from '../similarity';
+import { cosineSimilarity, tokenize, tokenMatchScore, TOKEN_MATCH_THRESHOLD } from '../similarity';
 import { openSqliteDatabase } from '../sqlite-open';
 import type { GraphMeta, GraphStats, SearchOptions, SyncPushItem } from '../types';
 import type { StorageAdapter } from './interface';
@@ -163,11 +163,19 @@ export class SQLiteStorage implements StorageAdapter {
 
   private init() {
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS constraint_sets (constraint_set_id TEXT PRIMARY KEY, atoms TEXT NOT NULL, summary TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS constraint_sets (constraint_set_id TEXT PRIMARY KEY, atoms TEXT NOT NULL, summary TEXT NOT NULL, created_at TEXT);
       CREATE TABLE IF NOT EXISTS decisions (decision_id TEXT PRIMARY KEY, decision_json TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS search_log (search_id INTEGER PRIMARY KEY AUTOINCREMENT, query TEXT NOT NULL, domain TEXT, project_id TEXT NOT NULL, hits INTEGER NOT NULL DEFAULT 0, cross_project_hits INTEGER NOT NULL DEFAULT 0, searched_at TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS sync_state (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     `);
+
+    // Pre-versioning DBs created constraint_sets with a created_at NOT NULL column;
+    // post-versioning code created it without. Normalize so inserts can always
+    // supply created_at regardless of which build created the table.
+    const csCols = (this.db as any).pragma('table_info(constraint_sets)') as Array<{ name: string }>;
+    if (!csCols.some((c) => c.name === 'created_at')) {
+      this.db.exec('ALTER TABLE constraint_sets ADD COLUMN created_at TEXT');
+    }
 
     // Read the current schema version
     const userVersion = ((this.db as any).pragma('user_version', { simple: true }) as number) ?? 0;
@@ -288,7 +296,13 @@ export class SQLiteStorage implements StorageAdapter {
   /* ── Constraint Sets ─────────────────────────────── */
 
   async saveConstraintSet(constraintSet: ConstraintSet): Promise<void> {
-    this.db.prepare('INSERT OR IGNORE INTO constraint_sets(constraint_set_id, atoms, summary) VALUES (?,?,?)').run([constraintSet.constraint_set_id, JSON.stringify(constraintSet.atoms), constraintSet.summary]);
+    this.db.prepare('INSERT OR IGNORE INTO constraint_sets(constraint_set_id, atoms, summary, created_at) VALUES (?,?,?,?)').run([constraintSet.constraint_set_id, JSON.stringify(constraintSet.atoms), constraintSet.summary, new Date().toISOString()]);
+    // OR IGNORE swallows ANY conflict (NOT NULL included), not just PK duplicates —
+    // a schema-drift mismatch here once silently dropped constraint sets for months.
+    const persisted = this.db.prepare('SELECT 1 FROM constraint_sets WHERE constraint_set_id = ?').get(constraintSet.constraint_set_id);
+    if (!persisted) {
+      throw new Error(`Constraint set ${constraintSet.constraint_set_id} failed to persist — constraint_sets schema drift?`);
+    }
   }
   async getConstraintSet(id: string): Promise<ConstraintSet | null> {
     const row = this.db.prepare('SELECT * FROM constraint_sets WHERE constraint_set_id=?').get(id) as any;
@@ -353,16 +367,54 @@ export class SQLiteStorage implements StorageAdapter {
     ]);
   }
 
+  private static readonly RECORD_COLUMNS =
+    `record_id, decision_id, q_id, agent_id, domain, project_id,
+     question_text, decision_text, constraint_set_id, refs, status,
+     supersedes_id, timestamp, payload_json`;
+
+  /**
+   * Normalize a records row into a retrievable record: canonical columns overlay
+   * the payload snapshot, so legacy-format payloads (question/answer, no
+   * decision_text) still surface spec fields and status changes made by
+   * SQL (supersede, tombstone) win over stale payload copies.
+   */
+  private rowToRecord(r: any): MinimalDecisionRecord | DecisionRecord {
+    let payload: Record<string, unknown> = {};
+    if (r.payload_json) {
+      try { payload = JSON.parse(r.payload_json); } catch { payload = {}; }
+    }
+    let refs: string[] = [];
+    if (r.refs) {
+      try { refs = JSON.parse(r.refs); } catch { refs = []; }
+    }
+    return {
+      ...payload,
+      decision_id: r.decision_id,
+      q_id: (payload.q_id as string) ?? r.q_id ?? '',
+      agent_id: r.agent_id,
+      domain: r.domain,
+      question_text: r.question_text ?? undefined,
+      decision_text: r.decision_text,
+      constraint_set_id: r.constraint_set_id,
+      refs,
+      status: r.status,
+      supersedes_id: r.supersedes_id ?? undefined,
+      timestamp: r.timestamp
+    } as MinimalDecisionRecord | DecisionRecord;
+  }
+
   async getRecord(recordId: string): Promise<MinimalDecisionRecord | DecisionRecord | null> {
-    const row = this.db.prepare('SELECT payload_json FROM records WHERE record_id=? OR decision_id=?').get([recordId, recordId]) as any;
-    return row?.payload_json ? JSON.parse(row.payload_json) : null;
+    const row = this.db.prepare(
+      `SELECT ${SQLiteStorage.RECORD_COLUMNS} FROM records WHERE record_id=? OR decision_id=?`
+    ).get([recordId, recordId]) as any;
+    return row ? this.rowToRecord(row) : null;
   }
 
   /* ── Search ──────────────────────────────────────── */
 
   async searchRecords(opts: SearchOptions): Promise<Array<MinimalDecisionRecord | DecisionRecord>> {
     let rows = this.db.prepare(
-      'SELECT payload_json, decision_id, project_id, question_text, decision_text, domain, status FROM records WHERE status != ?'
+      `SELECT ${SQLiteStorage.RECORD_COLUMNS} FROM records WHERE status != ?`
     ).all(['withdrawn']) as any[];
 
     // Project isolation
@@ -372,15 +424,30 @@ export class SQLiteStorage implements StorageAdapter {
     // Domain filter
     if (opts.domain) rows = rows.filter(r => r.domain === opts.domain);
 
-    // Text search across question_text + decision_text + domain
+    // Text search across question_text + decision_text + domain.
+    // Token-based: a multi-keyword query matches records containing the keywords
+    // anywhere (ranked by fraction matched), not just the exact phrase.
     if (opts.query) {
-      const q = opts.query.toLowerCase();
-      rows = rows.filter(r =>
-        `${r.question_text ?? ''} ${r.decision_text ?? ''} ${r.domain ?? ''}`.toLowerCase().includes(q)
-      );
+      const tokens = tokenize(opts.query);
+      if (tokens.length > 0) {
+        rows = rows
+          .map(r => ({
+            row: r,
+            score: tokenMatchScore(tokens, `${r.question_text ?? ''} ${r.decision_text ?? ''} ${r.domain ?? ''}`)
+          }))
+          .filter(s => s.score >= TOKEN_MATCH_THRESHOLD)
+          .sort((a, b) => b.score - a.score || String(b.row.timestamp).localeCompare(String(a.row.timestamp)))
+          .map(s => s.row);
+      } else {
+        // Query was all stopwords/punctuation — fall back to phrase matching
+        const q = opts.query.toLowerCase();
+        rows = rows.filter(r =>
+          `${r.question_text ?? ''} ${r.decision_text ?? ''} ${r.domain ?? ''}`.toLowerCase().includes(q)
+        );
+      }
     }
 
-    let parsed = rows.map(r => r.payload_json ? JSON.parse(r.payload_json) : null).filter(Boolean);
+    let parsed = rows.map(r => this.rowToRecord(r));
 
     // Parent prompt filter (searches decision context)
     if (opts.parentPrompt) {
@@ -458,10 +525,11 @@ export class SQLiteStorage implements StorageAdapter {
     } else {
       // Fresh cloud record — upsert constraint set from flat constraints[] array if provided
       if (Array.isArray(item.constraints) && item.constraints.length > 0) {
-        const summary = item.constraints.join('; ');
-        this.db.prepare(
-          'INSERT OR IGNORE INTO constraint_sets(constraint_set_id, atoms, summary) VALUES (?,?,?)'
-        ).run(item.constraint_set_id, JSON.stringify(item.constraints), summary);
+        await this.saveConstraintSet({
+          constraint_set_id: item.constraint_set_id,
+          atoms: item.constraints,
+          summary: item.constraints.join('; ')
+        });
       }
 
       const recordId = item.decision_id;
