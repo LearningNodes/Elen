@@ -2,6 +2,24 @@
 
 All notable changes to Elen packages are documented here.
 
+## 0.4.0 — 2026-10-19
+
+### Added
+
+- **Elen online** (`sdk-ts`, `mcp-server`): connected mode reads and writes through `/elen/v2`; per-call `agent`, `evidence`, and `questionId` on commits; new `elen_list` tool; hosted HTTP mode `elen-mcp serve --http` with six tools at Learning Nodes.
+- **CloudV2Storage** (`sdk-ts`): cloud-only and connected adapters for K4 routes; blocked/duplicate responses pass through unchanged.
+- **Dockerfile** at repo root for the hosted `elen-mcp` service.
+
+### Package versions
+
+| Package | Old | New |
+|---|---|---|
+| `@learningnodes/elen-core` | 0.3.0 | 0.4.0 |
+| `@learningnodes/elen` (sdk-ts) | 0.3.0 | 0.4.0 |
+| `@learningnodes/elen-consolidator` | 0.3.0 | 0.4.0 |
+| `@learningnodes/elen-local-api` | 0.3.0 | 0.4.0 |
+| `@learningnodes/elen-mcp` | 0.3.0 | 0.4.0 |
+
 ## 0.3.0 — 2026-07-03
 
 ### Added

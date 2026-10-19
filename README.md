@@ -14,6 +14,14 @@
 
 ---
 
+## Elen online
+
+Elen runs in three modes with the same tool names:
+
+1. **Local** — SQLite on your computer (`~/.elen/decisions.db`).
+2. **Connected** — your local MCP process reads and writes the Learning Nodes workspace through `https://api.learningnodes.com/elen/v2` with a key from workstation settings. Pass `agent` on each commit so bots show up by name. Use `elen_list` to filter by bot, domain, date, or status.
+3. **Hosted** — Learning Nodes runs the same package over HTTP for Grok Bot and Cursor at `https://api.learningnodes.com/mcp` after Authorize. Start it with `elen-mcp serve --http` (needs `ELEN_CLOUD_URL`).
+
 ## The Problem
 
 Agents burn massive amounts of context window tokens re-litigating the same architectural decisions, searching for the same constraints, and writing the same rationale. Chat logs are ephemeral. Standard vector DBs flood the context window with fuzzy, irrelevant text.

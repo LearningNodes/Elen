@@ -13,6 +13,7 @@ import { createId, createDecisionId, createConstraintSetId } from './id';
 import type { StorageAdapter } from './storage';
 import { findDuplicateCandidates, suggestConsolidation } from './graph-meta';
 import type { SQLiteStorage } from './storage/sqlite';
+import { isCloudV2Storage } from './storage/cloud-v2';
 import type {
   CommitDecisionResult,
   CompetencyProfileResult,
@@ -28,6 +29,10 @@ import type {
 
 export class ElenClient {
   constructor(private readonly agentId: string, private readonly storage: StorageAdapter) { }
+
+  private effectiveAgent(inputAgent?: string): string {
+    return (inputAgent && inputAgent.trim()) || this.agentId;
+  }
 
   async logDecision(input: LogDecisionInput): Promise<DecisionRecord> {
     if (input.constraints.length === 0) throw new Error('Decision must include at least one constraint');
@@ -99,6 +104,10 @@ export class ElenClient {
   }
 
   async commitDecision(input: CommitDecisionInput): Promise<CommitDecisionResult> {
+    if (isCloudV2Storage(this.storage)) {
+      return this.storage.commitV2(input);
+    }
+
     if (!input.force && 'listActiveForSimilarity' in this.storage) {
       const sqlite = this.storage as SQLiteStorage;
       const similar = findDuplicateCandidates(
@@ -122,6 +131,7 @@ export class ElenClient {
 
   private async writeCommit(input: CommitDecisionInput): Promise<MinimalDecisionRecord> {
     const now = new Date().toISOString();
+    const agentId = this.effectiveAgent(input.agent);
 
     const constraintSetId = createConstraintSetId(input.constraints);
     const existingConstraints = await this.storage.getConstraintSet(constraintSetId);
@@ -138,7 +148,7 @@ export class ElenClient {
 
     const record: MinimalDecisionRecord = {
       decision_id: createDecisionId(input.domain),
-      q_id: createId('q'),
+      q_id: input.questionId ?? createId('q'),
       question_text: input.question,
       decision_text: input.decisionText,
       constraint_set_id: constraintSetId,
@@ -146,7 +156,7 @@ export class ElenClient {
       status: input.status ?? 'active',
       supersedes_id: input.supersedesId,
       timestamp: now,
-      agent_id: this.agentId,
+      agent_id: agentId,
       domain: input.domain
     };
 
@@ -157,6 +167,10 @@ export class ElenClient {
   }
 
   async supersedeDecision(oldDecisionId: string, input: CommitDecisionInput): Promise<CommitDecisionResult> {
+    if (isCloudV2Storage(this.storage)) {
+      return this.storage.supersedeV2(oldDecisionId, input);
+    }
+
     const oldRecord = await this.storage.getRecord(oldDecisionId);
     if (oldRecord && 'status' in oldRecord) {
       oldRecord.status = 'superseded';
@@ -171,6 +185,12 @@ export class ElenClient {
   }
 
   async searchPrecedents(query: string, opts: SearchOptions = {}) {
+    // Connected mode: call v2 only when query has 3+ characters (FX-3 / K6).
+    if (isCloudV2Storage(this.storage) && query.trim().length >= 3) {
+      const results = await this.storage.searchV2({ ...opts, query });
+      await this.storage.logSearch?.(query, opts.domain, results.length);
+      return results as unknown as Awaited<ReturnType<typeof this.storage.searchRecords>>;
+    }
     const direct = await this.storage.searchRecords({ ...opts, query });
     if (direct.length > 0) {
       await this.storage.logSearch?.(query, opts.domain, direct.length);
@@ -182,6 +202,11 @@ export class ElenClient {
   }
 
   async suggest(opts: SearchOptions): Promise<Array<Partial<MinimalDecisionRecord>>> {
+    if (isCloudV2Storage(this.storage)) {
+      const results = await this.storage.searchV2(opts);
+      await this.storage.logSearch?.(opts.query ?? '', opts.domain, results.length);
+      return results as Array<Partial<MinimalDecisionRecord>>;
+    }
     const fullRecords = await this.storage.searchRecords(opts);
     const results = fullRecords
       .filter((r): r is MinimalDecisionRecord => 'decision_text' in r)
@@ -198,7 +223,16 @@ export class ElenClient {
     return results;
   }
 
-  async expand(decisionId: string): Promise<{ record: MinimalDecisionRecord | DecisionRecord, constraints: ConstraintSet | null } | null> {
+  async expand(decisionId: string): Promise<{ record: MinimalDecisionRecord | DecisionRecord, constraints: ConstraintSet | null, history?: unknown[] } | null> {
+    if (isCloudV2Storage(this.storage)) {
+      const full = await this.storage.getV2(decisionId);
+      if (!full) return null;
+      return {
+        record: full.record,
+        constraints: full.constraints,
+        history: full.history
+      };
+    }
     const record = await this.storage.getRecord(decisionId);
     if (!record) return null;
 
@@ -221,11 +255,54 @@ export class ElenClient {
     return { record, constraints };
   }
 
+  async listDecisions(opts: SearchOptions = {}) {
+    if (isCloudV2Storage(this.storage)) {
+      return this.storage.listV2({
+        agent: opts.agent,
+        domain: opts.domain,
+        since: opts.since,
+        status: opts.status ?? 'active',
+        limit: opts.limit
+      });
+    }
+    // Local elen_list: agent, domain, since, status (default active), newest first, limit 1..20
+    const lim = Math.min(Math.max(Number(opts.limit) || 20, 1), 20);
+    let rows = await this.storage.searchRecords({
+      domain: opts.domain,
+      query: opts.query,
+      limit: 200
+    });
+    const status = opts.status ?? 'active';
+    rows = rows.filter((r) => {
+      const st = 'status' in r ? String(r.status) : 'active';
+      if (status === 'all') return st === 'active' || st === 'superseded';
+      return st === status;
+    });
+    if (opts.agent) {
+      rows = rows.filter((r) => 'agent_id' in r && r.agent_id === opts.agent);
+    }
+    if (opts.since) {
+      rows = rows.filter((r) => {
+        const ts = 'timestamp' in r ? String(r.timestamp) : '';
+        return ts.slice(0, 10) >= opts.since!;
+      });
+    }
+    rows = [...rows].sort((a, b) => {
+      const ta = 'timestamp' in a ? String(a.timestamp) : '';
+      const tb = 'timestamp' in b ? String(b.timestamp) : '';
+      return tb.localeCompare(ta);
+    });
+    return { results: rows.slice(0, lim), next_before: null };
+  }
+
   async getCompetencyProfile(): Promise<CompetencyProfileResult> {
     return this.storage.getCompetencyProfile(this.agentId);
   }
 
-  getStatus(): GraphMeta {
+  getStatus(): GraphMeta | Promise<unknown> {
+    if (isCloudV2Storage(this.storage)) {
+      return this.storage.statusV2();
+    }
     if (!('getGraphMeta' in this.storage)) {
       throw new Error('getStatus requires SQLite storage');
     }

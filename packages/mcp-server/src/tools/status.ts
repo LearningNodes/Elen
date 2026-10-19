@@ -3,7 +3,11 @@ import type { Elen } from '@learningnodes/elen';
 export const elenStatusTool = {
   name: 'elen_status',
   description:
-    'Return local graph observability meta (agent, project, db path, counts, other projects). Call to verify namespace before committing.',
+    'Show which workspace this connection writes to, which bots have recorded decisions, and the totals.',
+  annotations: {
+    readOnlyHint: true,
+    openWorldHint: false
+  },
   inputSchema: {
     type: 'object',
     properties: {}

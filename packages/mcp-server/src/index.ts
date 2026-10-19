@@ -100,9 +100,14 @@ async function startMcp(options: CliOptions) {
 
   let countLine = '';
   try {
-    const meta = elen.getStatus();
-    countLine = `, records: ${meta.total} (${meta.active} active)`;
-    if (meta.hint) {
+    const metaOrPromise = elen.getStatus();
+    const meta = typeof (metaOrPromise as Promise<unknown>)?.then === 'function'
+      ? await (metaOrPromise as Promise<{ total?: number; active?: number; hint?: string }>)
+      : (metaOrPromise as { total?: number; active?: number; hint?: string });
+    if (meta && typeof meta.total === 'number') {
+      countLine = `, records: ${meta.total} (${meta.active} active)`;
+    }
+    if (meta?.hint) {
       process.stderr.write(`✦ Elen hint: ${meta.hint}\n`);
     }
   } catch {
@@ -124,6 +129,17 @@ async function startMcp(options: CliOptions) {
 
 async function main() {
   const argv = process.argv.slice(2);
+
+  if (argv[0] === 'serve' && (argv.includes('--http') || argv[1] === '--http')) {
+    const { startHttpServe } = await import('./http-serve');
+    let port = Number(process.env.PORT) || 8787;
+    const portIdx = argv.indexOf('--port');
+    if (portIdx >= 0 && argv[portIdx + 1]) {
+      port = Number(argv[portIdx + 1]) || port;
+    }
+    await startHttpServe(port);
+    return;
+  }
 
   if (argv[0] === 'elen') {
     await runElenCli(argv.slice(1));

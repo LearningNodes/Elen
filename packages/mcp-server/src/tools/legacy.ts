@@ -1,8 +1,15 @@
 import type { Elen } from '@learningnodes/elen';
+import { isCloudV2Storage } from '@learningnodes/elen';
 
 export const elenLogDecisionTool = {
   name: 'elen_log_decision',
   description: 'Create a validated Decision Record from constraints/evidence/answer.',
+  annotations: {
+    readOnlyHint: false,
+    destructiveHint: false,
+    idempotentHint: false,
+    openWorldHint: false
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -20,6 +27,10 @@ export const elenLogDecisionTool = {
 export const elenSearchPrecedentsTool = {
   name: 'elen_search_precedents',
   description: 'Search validated decisions for precedents.',
+  annotations: {
+    readOnlyHint: true,
+    openWorldHint: false
+  },
   inputSchema: {
     type: 'object',
     properties: {
@@ -65,6 +76,18 @@ export function validateSearchInput(input: unknown): {
 
 export async function handleLogDecision(elen: Elen, args: unknown): Promise<unknown> {
   const parsed = validateLogDecisionInput(args);
+  // Connected/hosted v2: map to commit (answer → decisionText, evidence kept, domain default general)
+  const storage = typeof elen.getStorage === 'function' ? elen.getStorage() : null;
+  const isV2 = storage && isCloudV2Storage(storage);
+  if (isV2) {
+    return elen.commitDecision({
+      question: parsed.question,
+      domain: parsed.domain ?? 'general',
+      decisionText: parsed.answer,
+      constraints: parsed.constraints,
+      evidence: parsed.evidence
+    });
+  }
   const result = await elen.logDecision({
     question: parsed.question,
     domain: parsed.domain ?? 'general',
@@ -79,10 +102,14 @@ export async function handleLogDecision(elen: Elen, args: unknown): Promise<unkn
 
 export async function handleSearchPrecedents(elen: Elen, args: unknown): Promise<unknown> {
   const parsed = validateSearchInput(args);
-  return elen.searchRecords({
+  const opts = {
     query: parsed.query,
     domain: parsed.domain,
     minConfidence: parsed.minConfidence,
     limit: parsed.limit
-  });
+  };
+  if (typeof elen.searchPrecedents === 'function') {
+    return elen.searchPrecedents(parsed.query ?? '', opts);
+  }
+  return elen.searchRecords(opts);
 }

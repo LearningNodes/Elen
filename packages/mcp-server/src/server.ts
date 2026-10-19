@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Elen, resolveCredentials } from '@learningnodes/elen';
@@ -10,6 +10,7 @@ import {
   elenSuggestTool,
   elenExpandTool,
   elenSupersedeTool,
+  elenListTool,
   elenGetCompetencyTool,
   elenGetContextTool,
   elenLogDecisionTool,
@@ -22,6 +23,7 @@ import {
   handleSuggest,
   handleExpand,
   handleSupersede,
+  handleList,
   handleGetCompetency,
   handleGetContext,
   handleLogDecision,
@@ -29,8 +31,21 @@ import {
   handleStatus,
   handleConsolidate,
   handleTeamSearch,
-  handleIncoming
+  handleIncoming,
+  withNotice
 } from './tools';
+
+// A10: notice on suggest/search_precedents/expand/list — not on status
+const NOTICE_TOOLS = new Set(['elen_suggest', 'elen_expand', 'elen_list', 'elen_search_precedents']);
+
+function mcpPackageVersion(): string {
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string };
+    return pkg.version || '0.4.0';
+  } catch {
+    return '0.4.0';
+  }
+}
 
 export interface McpServerOptions {
   agentId: string;
@@ -65,7 +80,8 @@ export function createElenClient(options: McpServerOptions): Elen {
       apiUrl: cloudUrl,
       userEmail,
       apiKey: options.cloudApiKey ?? creds.apiKey,
-      sqlitePath
+      sqlitePath,
+      cloudV2: true
     });
   }
 
@@ -91,6 +107,8 @@ export async function routeToolCall(
       return handleSuggest(elen, args);
     case elenExpandTool.name:
       return handleExpand(elen, args);
+    case elenListTool.name:
+      return handleList(elen, args);
     case elenSupersedeTool.name:
       return handleSupersede(elen, args);
     case elenGetCompetencyTool.name:
@@ -121,7 +139,7 @@ export function createMcpServer(options: McpServerOptions) {
   const server = new Server(
     {
       name: '@learningnodes/elen-mcp',
-      version: '0.1.0'
+      version: mcpPackageVersion()
     },
     {
       capabilities: {
@@ -136,6 +154,7 @@ export function createMcpServer(options: McpServerOptions) {
       elenSuggestTool,
       elenExpandTool,
       elenSupersedeTool,
+      elenListTool,
       elenGetCompetencyTool,
       elenGetContextTool,
       elenStatusTool,
@@ -148,13 +167,18 @@ export function createMcpServer(options: McpServerOptions) {
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const name = request.params.name;
     const result = await routeToolCall(
       elen,
       options.agentId,
-      request.params.name,
+      name,
       request.params.arguments,
       sqlitePath
     );
+
+    if (NOTICE_TOOLS.has(name)) {
+      return { content: withNotice(result) };
+    }
 
     return {
       content: [

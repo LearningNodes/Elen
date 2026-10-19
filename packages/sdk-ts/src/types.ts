@@ -12,6 +12,12 @@ export interface ElenConfig {
   storage?: 'memory' | 'sqlite' | 'cloud';
   sqlitePath?: string;
   apiUrl?: string;
+  /** Hosted / cloud-only: no local SQLite fallback (Elen online). */
+  cloudOnly?: boolean;
+  /** Sent as X-Elen-Client for manual keys / hosted mode. */
+  clientName?: string;
+  /** When true (default for connected), use /elen/v2 storage. */
+  cloudV2?: boolean;
   /**
    * Primary auth credential for cloud sync (Bearer lnk_ key from /settings/api-keys).
    * Also accepted as ELEN_API_KEY or ELEN_CLOUD_API_KEY env var.
@@ -84,6 +90,10 @@ export interface CommitDecisionInput {
   supersedesId?: string;
   /** Skip near-duplicate check (use after reviewing similar_candidates). */
   force?: boolean;
+  evidence?: string[];
+  /** Per-call agent overrides process agent id. */
+  agent?: string;
+  questionId?: string;
 }
 
 export interface LogDecisionInput {
@@ -105,6 +115,10 @@ export interface SearchOptions {
   limit?: number;
   minConfidence?: number;
   parentPrompt?: string;
+  includeSuperseded?: boolean;
+  agent?: string;
+  since?: string;
+  status?: 'active' | 'superseded' | 'all';
 }
 
 export interface SearchPrecedentsOptions {
@@ -142,6 +156,9 @@ export interface GetContextResult {
 export interface CommitDecisionResult {
   committed?: MinimalDecisionRecord;
   blocked?: boolean;
+  duplicate?: boolean;
+  superseded?: string;
+  warning?: string;
   similar_candidates?: Array<{
     decision_id: string;
     question_text?: string;

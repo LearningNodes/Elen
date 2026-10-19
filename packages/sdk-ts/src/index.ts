@@ -1,5 +1,6 @@
 import { ElenClient } from './client';
 import { CloudMcpStorage } from './storage/cloud-mcp';
+import { CloudV2Storage, isCloudV2Storage } from './storage/cloud-v2';
 import { InMemoryStorage, SQLiteStorage, type StorageAdapter } from './storage';
 import { SyncEngine } from './sync/sync-engine';
 import type { CommitDecisionInput, ElenConfig, LogDecisionInput, SearchOptions, SyncPushResponse } from './types';
@@ -16,6 +17,11 @@ export class Elen {
     this.client = new ElenClient(config.agentId, this.storage);
   }
 
+  /** Expose storage for MCP hosted/connected routing. */
+  getStorage(): StorageAdapter {
+    return this.storage;
+  }
+
   private requireSqlite(): SQLiteStorage {
     if (!(this.storage instanceof SQLiteStorage)) {
       throw new Error('This operation requires local SQLite storage');
@@ -29,11 +35,22 @@ export class Elen {
       if (!resolvedUrl) {
         throw new Error('Cloud MCP storage requires apiUrl or cloudBaseUrl (ELEN_CLOUD_URL)');
       }
-      // apiKey auth is primary for sync; userEmail is optional/legacy for /elen/mcp/commit
+      const useV2 = config.cloudV2 !== false;
       const localFallback =
-        config.sqlitePath != null
-          ? new SQLiteStorage(config.sqlitePath, config.projectId, config.defaultProjectIsolation ?? 'strict')
-          : undefined;
+        config.cloudOnly || config.sqlitePath == null
+          ? undefined
+          : new SQLiteStorage(config.sqlitePath, config.projectId, config.defaultProjectIsolation ?? 'strict');
+      if (useV2) {
+        return new CloudV2Storage({
+          apiUrl: resolvedUrl,
+          userEmail: config.userEmail,
+          agentId: config.agentId,
+          apiKey: config.apiKey,
+          clientName: config.clientName,
+          cloudOnly: Boolean(config.cloudOnly),
+          localFallback
+        });
+      }
       return new CloudMcpStorage({
         apiUrl: resolvedUrl,
         userEmail: config.userEmail,
@@ -76,6 +93,10 @@ export class Elen {
 
   async expand(decisionId: string) {
     return this.client.expand(decisionId);
+  }
+
+  async listDecisions(opts: SearchOptions = {}) {
+    return this.client.listDecisions(opts);
   }
 
   async getCompetencyProfile() {
