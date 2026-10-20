@@ -1,10 +1,11 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { Elen, resolveCredentials } from '@learningnodes/elen';
+import { Elen, isCloudV2Storage, resolveCredentials } from '@learningnodes/elen';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { normalizeClientName } from './normalize-client';
 import {
   elenCommitTool,
   elenSuggestTool,
@@ -132,6 +133,28 @@ export async function routeToolCall(
   }
 }
 
+export { normalizeClientName } from './normalize-client';
+
+/**
+ * After MCP initialize, label connected v2 storage from clientInfo.name (T-2 / K1).
+ * Hosted HTTP keeps X-MCP-Client instead.
+ */
+export function applyConnectedClientName(server: Server, elen: Elen): void {
+  // Runtime Server exposes oninitialized / getClientVersion; typings lag.
+  const mcp = server as Server & {
+    oninitialized?: () => void;
+    getClientVersion?: () => { name?: string; version?: string } | undefined;
+  };
+  mcp.oninitialized = () => {
+    const info = mcp.getClientVersion?.();
+    const name = normalizeClientName(info?.name || '');
+    const storage = elen.getStorage();
+    if (isCloudV2Storage(storage)) {
+      storage.setClientName(name);
+    }
+  };
+}
+
 export function createMcpServer(options: McpServerOptions) {
   const sqlitePath = options.storagePath ?? defaultStoragePath();
   const elen = createElenClient(options);
@@ -147,6 +170,10 @@ export function createMcpServer(options: McpServerOptions) {
       }
     }
   );
+
+  if (options.connected) {
+    applyConnectedClientName(server, elen);
+  }
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
@@ -192,6 +219,7 @@ export function createMcpServer(options: McpServerOptions) {
 
   return {
     server,
+    elen,
     async start() {
       const transport = new StdioServerTransport();
       await server.connect(transport);
