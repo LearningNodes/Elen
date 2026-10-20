@@ -96,6 +96,12 @@ export interface CommitDecisionInput {
   questionId?: string;
 }
 
+/** Supersede: question/domain optional — cloud defaults to the old decision's; local reads the old record. */
+export type SupersedeDecisionInput = Omit<CommitDecisionInput, 'question' | 'domain'> & {
+  question?: string;
+  domain?: string;
+};
+
 export interface LogDecisionInput {
   question: string;
   domain: string;

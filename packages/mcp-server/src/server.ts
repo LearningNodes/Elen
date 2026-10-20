@@ -33,7 +33,8 @@ import {
   handleConsolidate,
   handleTeamSearch,
   handleIncoming,
-  withNotice
+  withNotice,
+  toolErrorResult
 } from './tools';
 
 // A10: notice on suggest/search_precedents/expand/list — not on status
@@ -195,26 +196,30 @@ export function createMcpServer(options: McpServerOptions) {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const name = request.params.name;
-    const result = await routeToolCall(
-      elen,
-      options.agentId,
-      name,
-      request.params.arguments,
-      sqlitePath
-    );
+    try {
+      const result = await routeToolCall(
+        elen,
+        options.agentId,
+        name,
+        request.params.arguments,
+        sqlitePath
+      );
 
-    if (NOTICE_TOOLS.has(name)) {
-      return { content: withNotice(result) };
+      if (NOTICE_TOOLS.has(name)) {
+        return { content: withNotice(result) };
+      }
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2)
+          }
+        ]
+      };
+    } catch (err) {
+      return toolErrorResult(err);
     }
-
-    return {
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify(result, null, 2)
-        }
-      ]
-    };
   });
 
   return {

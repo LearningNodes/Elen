@@ -5,7 +5,7 @@ import type {
   DecisionRecord,
   MinimalDecisionRecord
 } from '@learningnodes/elen-core';
-import type { CommitDecisionInput, CommitDecisionResult, SearchOptions } from '../types';
+import type { CommitDecisionInput, CommitDecisionResult, SearchOptions, SupersedeDecisionInput } from '../types';
 import type { StorageAdapter } from './interface';
 import { CloudMcpStorage, type CloudMcpStorageOptions } from './cloud-mcp';
 
@@ -115,19 +115,21 @@ export class CloudV2Storage extends CloudMcpStorage implements StorageAdapter {
     return (await res.json()) as CommitDecisionResult;
   }
 
-  async supersedeV2(oldId: string, input: CommitDecisionInput): Promise<CommitDecisionResult> {
+  async supersedeV2(oldId: string, input: SupersedeDecisionInput): Promise<CommitDecisionResult> {
+    // Send only what was given — the server defaults question/domain to the old decision's.
+    const body: Record<string, unknown> = {
+      decisionText: input.decisionText,
+      constraints: input.constraints
+    };
+    if (input.question !== undefined) body.question = input.question;
+    if (input.domain !== undefined) body.domain = input.domain;
+    if (input.refs !== undefined) body.refs = input.refs;
+    if (input.evidence !== undefined) body.evidence = input.evidence;
+    if (input.agent !== undefined) body.agent = input.agent;
     const res = await this.v2Fetch(`/elen/v2/decisions/${encodeURIComponent(oldId)}/supersede`, {
       method: 'POST',
       headers: this.v2Headers(),
-      body: JSON.stringify({
-        question: input.question,
-        domain: input.domain,
-        decisionText: input.decisionText,
-        constraints: input.constraints,
-        refs: input.refs,
-        evidence: input.evidence,
-        agent: input.agent
-      })
+      body: JSON.stringify(body)
     });
     return (await res.json()) as CommitDecisionResult;
   }

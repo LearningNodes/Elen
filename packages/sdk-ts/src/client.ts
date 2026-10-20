@@ -18,6 +18,7 @@ import type {
   CommitDecisionResult,
   CompetencyProfileResult,
   CommitDecisionInput,
+  SupersedeDecisionInput,
   ConsolidateResult,
   GraphMeta,
   GraphStats,
@@ -166,18 +167,37 @@ export class ElenClient {
     return record;
   }
 
-  async supersedeDecision(oldDecisionId: string, input: CommitDecisionInput): Promise<CommitDecisionResult> {
+  async supersedeDecision(oldDecisionId: string, input: SupersedeDecisionInput): Promise<CommitDecisionResult> {
     if (isCloudV2Storage(this.storage)) {
       return this.storage.supersedeV2(oldDecisionId, input);
     }
 
+    // Local mode: question/domain default to the old record's when not given.
     const oldRecord = await this.storage.getRecord(oldDecisionId);
+    const oldQuestion =
+      oldRecord && 'question_text' in oldRecord
+        ? oldRecord.question_text
+        : oldRecord && 'question' in oldRecord
+          ? (oldRecord as { question?: string }).question
+          : undefined;
+    const oldDomain = oldRecord && 'domain' in oldRecord ? oldRecord.domain : undefined;
+    const question = input.question ?? oldQuestion;
+    const domain = input.domain ?? oldDomain;
+    if (!question) throw new Error('question: is required');
+    if (!domain) throw new Error('domain: is required');
+
     if (oldRecord && 'status' in oldRecord) {
       oldRecord.status = 'superseded';
       await this.storage.saveRecord(oldRecord);
     }
 
-    return this.commitDecision({ ...input, supersedesId: oldDecisionId, force: input.force ?? true });
+    return this.commitDecision({
+      ...input,
+      question,
+      domain,
+      supersedesId: oldDecisionId,
+      force: input.force ?? true
+    });
   }
 
   async searchRecords(opts: SearchOptions) {

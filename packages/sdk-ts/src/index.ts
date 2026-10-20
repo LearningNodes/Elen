@@ -3,7 +3,7 @@ import { CloudMcpStorage } from './storage/cloud-mcp';
 import { CloudV2Storage, isCloudV2Storage } from './storage/cloud-v2';
 import { InMemoryStorage, SQLiteStorage, type StorageAdapter } from './storage';
 import { SyncEngine } from './sync/sync-engine';
-import type { CommitDecisionInput, ElenConfig, LogDecisionInput, SearchOptions, SyncPushResponse } from './types';
+import type { CommitDecisionInput, ElenConfig, LogDecisionInput, SearchOptions, SupersedeDecisionInput, SyncPushResponse } from './types';
 import type { ExportBundle } from './admin';
 
 export class Elen {
@@ -75,7 +75,7 @@ export class Elen {
     return this.client.commitDecision(input);
   }
 
-  async supersedeDecision(oldDecisionId: string, input: CommitDecisionInput) {
+  async supersedeDecision(oldDecisionId: string, input: SupersedeDecisionInput) {
     return this.client.supersedeDecision(oldDecisionId, input);
   }
 

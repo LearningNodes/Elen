@@ -19,7 +19,8 @@ import {
   handleSupersede,
   handleList,
   handleStatus,
-  withNotice
+  withNotice,
+  toolErrorResult
 } from './tools';
 import { normalizeClientName } from './normalize-client';
 
@@ -126,12 +127,7 @@ export function createHostedApp(cloudUrl: string): { app: express.Express; versi
           content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        const error = (err as { error?: string }).error || 'tool_error';
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error, message }) }]
-        };
+        return toolErrorResult(err);
       }
     });
 

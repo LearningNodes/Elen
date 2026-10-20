@@ -18,6 +18,7 @@ export { elenTeamSearchTool, handleTeamSearch, teamSearchInputSchema } from './t
 export { elenIncomingTool, handleIncoming, incomingInputSchema } from './incoming';
 export { elenListTool, handleList, listInputSchema } from './list';
 export { RECORD_NOTICE, withNotice } from './notice';
+export { toolErrorBody, toolErrorResult, invalidInputMessageFromZod } from './tool-error';
 
 export const ELEN_TOOLS = [
   'elen_commit',
