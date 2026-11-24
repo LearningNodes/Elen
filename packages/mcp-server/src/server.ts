@@ -1,10 +1,11 @@
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Elen, isCloudV2Storage, resolveCredentials } from '@learningnodes/elen';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { packageVersion } from './local-api';
 import { normalizeClientName } from './normalize-client';
 import {
   elenCommitTool,
@@ -39,15 +40,6 @@ import {
 
 // A10: notice on suggest/search_precedents/expand/list — not on status
 const NOTICE_TOOLS = new Set(['elen_suggest', 'elen_expand', 'elen_list', 'elen_search_precedents']);
-
-function mcpPackageVersion(): string {
-  try {
-    const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8')) as { version?: string };
-    return pkg.version || '0.4.0';
-  } catch {
-    return '0.4.0';
-  }
-}
 
 export interface McpServerOptions {
   agentId: string;
@@ -163,7 +155,7 @@ export function createMcpServer(options: McpServerOptions) {
   const server = new Server(
     {
       name: '@learningnodes/elen-mcp',
-      version: mcpPackageVersion()
+      version: packageVersion()
     },
     {
       capabilities: {

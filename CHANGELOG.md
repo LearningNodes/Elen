@@ -18,7 +18,20 @@ All notable changes to Elen packages are documented here.
 | `@learningnodes/elen` (sdk-ts) | 0.3.0 | 0.4.0 |
 | `@learningnodes/elen-consolidator` | 0.3.0 | 0.4.0 |
 | `@learningnodes/elen-local-api` | 0.3.0 | 0.4.0 |
-| `@learningnodes/elen-mcp` | 0.3.0 | 0.4.0 |
+| `@learningnodes/elen-mcp` | 0.3.1 | 0.4.0 |
+
+## 0.3.1 — 2026-10-14
+
+### Added
+
+- **npm README** (`mcp-server`): install steps per client, the agent protocol block, what is stored, and the tool list.
+- **Package metadata** (`mcp-server`): description, keywords, repository, homepage and bugs.
+- **mcpName** (`mcp-server`): `com.learningnodes/elen`, for the MCP Registry.
+- **server.json** (`mcp-server`): the MCP Registry entry.
+
+### Fixed
+
+- **Reported versions** (`mcp-server`): the MCP server and the local API report the real package version, read from `package.json`.
 
 ## 0.3.0 — 2026-07-03
 
