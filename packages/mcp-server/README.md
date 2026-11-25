@@ -3,13 +3,13 @@ Elen is an open-source MCP server that records the decisions your coding agent m
 ## Install
 
 ```bash
-npx -y @learningnodes/elen-mcp@0.3.1
+npx -y @learningnodes/elen-mcp@0.4.0
 ```
 
 ### Claude Code
 
 ```bash
-claude mcp add --transport stdio elen -- npx -y @learningnodes/elen-mcp@0.3.1
+claude mcp add --transport stdio elen -- npx -y @learningnodes/elen-mcp@0.4.0
 ```
 
 ### VS Code
@@ -17,7 +17,7 @@ claude mcp add --transport stdio elen -- npx -y @learningnodes/elen-mcp@0.3.1
 Open this link to install:
 
 ```
-vscode:mcp/install?%7B%22name%22%3A%22elen%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40learningnodes%2Felen-mcp%400.3.1%22%5D%7D
+vscode:mcp/install?%7B%22name%22%3A%22elen%22%2C%22command%22%3A%22npx%22%2C%22args%22%3A%5B%22-y%22%2C%22%40learningnodes%2Felen-mcp%400.4.0%22%5D%7D
 ```
 
 ### Cursor
@@ -29,7 +29,7 @@ Add this to `.cursor/mcp.json` in your project:
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.3.1"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.4.0"]
     }
   }
 }
@@ -44,7 +44,7 @@ Add this to `settings.json` (`~/.gemini/settings.json`, or `.gemini/settings.jso
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.3.1"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.4.0"]
     }
   }
 }
@@ -59,7 +59,7 @@ Use the same `mcpServers` entry:
   "mcpServers": {
     "elen": {
       "command": "npx",
-      "args": ["-y", "@learningnodes/elen-mcp@0.3.1"]
+      "args": ["-y", "@learningnodes/elen-mcp@0.4.0"]
     }
   }
 }

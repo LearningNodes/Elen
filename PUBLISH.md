@@ -45,6 +45,8 @@ cd packages/mcp-server && npm publish --dry-run
 
 After publish, point MCP configs at `@learningnodes/elen-mcp@0.4.0` (or `@latest` for per-client native prebuilds).
 
+For 0.4.0 the README install lines already say `@0.4.0` in the release commit, so the npm page is right from the first minute. After the npm publish, publish to the MCP Registry with the steps in the 0.3.1 section below; the check at the end must list version 0.4.0. Nico runs every publish and every login.
+
 ## 0.3.1 (elen-mcp only)
 
 Only `@learningnodes/elen-mcp` (`packages/mcp-server`) is published. The other four packages stay at 0.3.0 and are not republished.
