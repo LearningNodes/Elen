@@ -3,6 +3,7 @@ import {
   elenGetCompetencyTool,
   elenLogDecisionTool,
   elenSearchPrecedentsTool,
+  elenSuggestTool,
   handleGetCompetency,
   handleLogDecision,
   handleSearchPrecedents,
@@ -27,6 +28,13 @@ describe('MCP tool schemas', () => {
     expect(elenSearchPrecedentsTool.inputSchema.properties).toHaveProperty('domain');
     expect(elenSearchPrecedentsTool.inputSchema.properties).toHaveProperty('minConfidence');
     expect(elenSearchPrecedentsTool.inputSchema.properties).toHaveProperty('limit');
+  });
+
+  it('elen_suggest domain describes ranking, not hard filtering', () => {
+    const domain = (elenSuggestTool.inputSchema.properties as { domain?: { description?: string } }).domain;
+    expect(domain?.description).toContain('rank first');
+    expect(domain?.description).toContain('other topics are still returned');
+    expect(domain?.description).not.toBe('Filter by domain');
   });
 
   it('elen_get_competency schema supports optional agentId', () => {

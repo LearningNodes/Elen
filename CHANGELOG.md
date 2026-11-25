@@ -10,6 +10,10 @@ All notable changes to Elen packages are documented here.
 - **CloudV2Storage** (`sdk-ts`): cloud-only and connected adapters for K4 routes; blocked/duplicate responses pass through unchanged.
 - **Dockerfile** at repo root for the hosted `elen-mcp` service.
 
+### Changed
+
+- **elen_suggest**: a domain now ranks results and no longer hides decisions filed under another domain (local store and Elen online).
+
 ### Package versions
 
 | Package | Old | New |

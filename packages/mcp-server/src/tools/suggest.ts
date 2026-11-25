@@ -13,7 +13,11 @@ export const elenSuggestTool = {
     type: 'object',
     properties: {
       query: { type: 'string', description: 'Search term or question' },
-      domain: { type: 'string', description: 'Filter by domain' },
+      domain: {
+        type: 'string',
+        description:
+          'Topic you are working in. Decisions filed under it rank first. Matching decisions from other topics are still returned.'
+      },
       limit: { type: 'number', description: 'Max suggestions to return (Top-K)' },
       includeSuperseded: {
         type: 'boolean',

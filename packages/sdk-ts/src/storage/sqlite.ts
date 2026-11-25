@@ -421,14 +421,17 @@ export class SQLiteStorage implements StorageAdapter {
     if (this.defaultIsolation === 'strict' || opts.includeShared === false) {
       rows = rows.filter(r => r.project_id === this.projectId);
     }
-    // Domain filter
-    if (opts.domain) rows = rows.filter(r => r.domain === opts.domain);
+    const queryTokens = opts.query ? tokenize(opts.query) : [];
+    const domainFiltersListing = !opts.query || queryTokens.length === 0;
+    if (opts.domain && domainFiltersListing) {
+      rows = rows.filter(r => r.domain === opts.domain);
+    }
 
     // Text search across question_text + decision_text + domain.
     // Token-based: a multi-keyword query matches records containing the keywords
     // anywhere (ranked by fraction matched), not just the exact phrase.
     if (opts.query) {
-      const tokens = tokenize(opts.query);
+      const tokens = queryTokens.length > 0 ? queryTokens : tokenize(opts.query);
       if (tokens.length > 0) {
         rows = rows
           .map(r => ({
@@ -436,7 +439,14 @@ export class SQLiteStorage implements StorageAdapter {
             score: tokenMatchScore(tokens, `${r.question_text ?? ''} ${r.decision_text ?? ''} ${r.domain ?? ''}`)
           }))
           .filter(s => s.score >= TOKEN_MATCH_THRESHOLD)
-          .sort((a, b) => b.score - a.score || String(b.row.timestamp).localeCompare(String(a.row.timestamp)))
+          .sort((a, b) => {
+            const boostA = opts.domain && a.row.domain === opts.domain ? 0.1 : 0;
+            const boostB = opts.domain && b.row.domain === opts.domain ? 0.1 : 0;
+            return (
+              b.score + boostB - (a.score + boostA) ||
+              String(b.row.timestamp).localeCompare(String(a.row.timestamp))
+            );
+          })
           .map(s => s.row);
       } else {
         // Query was all stopwords/punctuation — fall back to phrase matching

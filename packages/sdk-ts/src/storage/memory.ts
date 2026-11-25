@@ -23,7 +23,11 @@ export class InMemoryStorage implements StorageAdapter {
 
   async searchRecords(opts: SearchOptions): Promise<Array<MinimalDecisionRecord | DecisionRecord>> {
     let results = Array.from(this.records.values());
-    if (opts.domain) results = results.filter((r) => r.domain === opts.domain);
+    const queryTokens = opts.query ? tokenize(opts.query) : [];
+    const domainFiltersListing = !opts.query || queryTokens.length === 0;
+    if (opts.domain && domainFiltersListing) {
+      results = results.filter((r) => r.domain === opts.domain);
+    }
     if (typeof opts.minConfidence === 'number') results = results.filter((r) => ('confidence' in r ? r.confidence >= opts.minConfidence! : true));
     if (opts.parentPrompt) {
       const needle = opts.parentPrompt.toLowerCase();
@@ -37,10 +41,19 @@ export class InMemoryStorage implements StorageAdapter {
         'decision_text' in r ? `${r.question_text ?? ''} ${r.decision_text} ${r.domain}` : `${r.question} ${r.answer} ${r.domain} ${r.constraints_snapshot.map(c=>c.description).join(' ')} ${r.evidence_snapshot.map(e=>`${e.claim} ${e.proof}`).join(' ')}`;
       const tokens = tokenize(opts.query);
       if (tokens.length > 0) {
+        const recordTime = (r: MinimalDecisionRecord | DecisionRecord) =>
+          'timestamp' in r ? r.timestamp : 'published_at' in r ? r.published_at : '';
         results = results
           .map((r) => ({ r, score: tokenMatchScore(tokens, haystackOf(r)) }))
           .filter((s) => s.score >= TOKEN_MATCH_THRESHOLD)
-          .sort((a, b) => b.score - a.score)
+          .sort((a, b) => {
+            const boostA = opts.domain && a.r.domain === opts.domain ? 0.1 : 0;
+            const boostB = opts.domain && b.r.domain === opts.domain ? 0.1 : 0;
+            return (
+              b.score + boostB - (a.score + boostA) ||
+              recordTime(b.r).localeCompare(recordTime(a.r))
+            );
+          })
           .map((s) => s.r);
       } else {
         const needle = opts.query.toLowerCase();
